@@ -1,0 +1,6 @@
+.vscode
+.env
+
+._DS_Store
+
+outputs/*
