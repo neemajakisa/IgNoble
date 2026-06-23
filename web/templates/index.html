@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ig Nobel Research Agent</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,400&family=Source+Serif+4:ital,wght@0,300;0,400;0,600;1,300&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Tokens ────────────────────────────────────────────────── */
+    :root {
+      --ink:       #1a1714;
+      --paper:     #f7f4ef;
+      --cream:     #ede8e0;
+      --rule:      #d4cec4;
+      --accent:    #b5451b;      /* terracotta-red — journal masthead colour */
+      --accent2:   #4a7c59;      /* muted green for secondary badges */
+      --muted:     #7a7168;
+      --mono-bg:   #f0ece4;
+      --glow:      rgba(181,69,27,0.08);
+      --serif:     'Source Serif 4', Georgia, serif;
+      --display:   'Playfair Display', Georgia, serif;
+      --mono:      'JetBrains Mono', 'Courier New', monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--serif);
+      background: var(--paper);
+      color: var(--ink);
+      min-height: 100vh;
+      font-size: 16px;
+      line-height: 1.65;
+    }
+
+    /* ── Masthead ──────────────────────────────────────────────── */
+    header {
+      border-bottom: 2px solid var(--ink);
+      padding: 28px 40px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      background: var(--paper);
+    }
+    .masthead-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .masthead-title {
+      font-family: var(--display);
+      font-size: clamp(28px, 5vw, 42px);
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: -0.01em;
+      line-height: 1.1;
+      text-align: center;
+    }
+    .masthead-sub {
+      font-family: var(--display);
+      font-style: italic;
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    /* ── Layout ────────────────────────────────────────────────── */
+    main {
+      max-width: 780px;
+      margin: 0 auto;
+      padding: 40px 24px 80px;
+    }
+
+    /* ── Input section ─────────────────────────────────────────── */
+    .prompt-section {
+      margin-bottom: 36px;
+    }
+    .prompt-label {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      display: block;
+      margin-bottom: 10px;
+    }
+    .prompt-row {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+    textarea {
+      flex: 1;
+      font-family: var(--serif);
+      font-size: 15px;
+      line-height: 1.55;
+      padding: 14px 16px;
+      border: 1.5px solid var(--rule);
+      border-radius: 3px;
+      background: white;
+      color: var(--ink);
+      resize: vertical;
+      min-height: 72px;
+      transition: border-color 0.15s;
+      outline: none;
+    }
+    textarea:focus { border-color: var(--accent); }
+    textarea::placeholder { color: var(--muted); font-style: italic; }
+
+    button#submit-btn {
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      font-weight: 500;
+      text-transform: uppercase;
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 3px;
+      padding: 14px 22px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s, transform 0.1s;
+      flex-shrink: 0;
+    }
+    button#submit-btn:hover { background: #9a3a17; }
+    button#submit-btn:active { transform: scale(0.97); }
+    button#submit-btn:disabled { background: var(--muted); cursor: not-allowed; }
+
+    /* example prompts */
+    .examples {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .example-chip {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      background: var(--mono-bg);
+      border: 1px solid var(--rule);
+      border-radius: 2px;
+      padding: 4px 10px;
+      cursor: pointer;
+      color: var(--muted);
+      transition: color 0.12s, border-color 0.12s;
+    }
+    .example-chip:hover { color: var(--accent); border-color: var(--accent); }
+
+    /* ── Status / loading ──────────────────────────────────────── */
+    #status-area {
+      display: none;
+      margin-bottom: 32px;
+    }
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: var(--mono-bg);
+      border-left: 3px solid var(--accent);
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid var(--rule);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Error ─────────────────────────────────────────────────── */
+    #error-area {
+      display: none;
+      padding: 14px 18px;
+      background: #fff5f3;
+      border: 1px solid #f5c4bb;
+      border-left: 3px solid var(--accent);
+      border-radius: 2px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: #8b2e1a;
+      margin-bottom: 28px;
+    }
+
+    /* ── Results ───────────────────────────────────────────────── */
+    #results-area { display: none; }
+
+    /* candidate ideas */
+    .ideas-section { margin-bottom: 32px; }
+    .section-eyebrow {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .section-eyebrow::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--rule);
+    }
+
+    .idea-card {
+      border: 1px solid var(--rule);
+      border-radius: 3px;
+      padding: 16px 20px;
+      margin-bottom: 10px;
+      background: white;
+      transition: border-color 0.15s;
+    }
+    .idea-card.selected {
+      border-color: var(--accent);
+      background: var(--glow);
+      box-shadow: 0 0 0 3px var(--glow);
+    }
+    .idea-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 6px;
+    }
+    .idea-title {
+      font-family: var(--display);
+      font-style: italic;
+      font-size: 15px;
+      color: var(--ink);
+      line-height: 1.3;
+    }
+    .idea-badge {
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      background: var(--accent2);
+      color: white;
+      padding: 3px 8px;
+      border-radius: 2px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .idea-badge.winner { background: var(--accent); }
+    .idea-hypothesis {
+      font-size: 13px;
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    /* divider */
+    .rule { border: none; border-top: 1px solid var(--rule); margin: 28px 0; }
+
+    /* paper display */
+    .paper-section { margin-bottom: 36px; }
+
+    .paper-title-display {
+      font-family: var(--display);
+      font-size: clamp(18px, 3vw, 24px);
+      font-weight: 700;
+      line-height: 1.25;
+      color: var(--ink);
+      margin-bottom: 6px;
+    }
+    .paper-authors {
+      font-family: var(--display);
+      font-style: italic;
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 18px;
+    }
+
+    .paper-section-heading {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 8px;
+      margin-top: 24px;
+    }
+    .paper-body {
+      font-size: 14.5px;
+      line-height: 1.72;
+      text-align: justify;
+      color: var(--ink);
+    }
+    .paper-body p { margin-bottom: 10px; }
+
+    .abstract-box {
+      background: var(--mono-bg);
+      border-left: 3px solid var(--rule);
+      padding: 14px 18px;
+      font-size: 13.5px;
+      line-height: 1.65;
+      color: #3a3530;
+      margin-bottom: 4px;
+    }
+
+    .references-list {
+      list-style: none;
+      padding: 0;
+    }
+    .references-list li {
+      font-size: 12.5px;
+      line-height: 1.5;
+      color: var(--muted);
+      padding-left: 22px;
+      text-indent: -22px;
+      margin-bottom: 5px;
+    }
+
+    /* scores strip */
+    .scores-strip {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+      padding: 14px 18px;
+      background: var(--mono-bg);
+      border: 1px solid var(--rule);
+      border-radius: 3px;
+    }
+    .score-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-width: 64px;
+    }
+    .score-num {
+      font-family: var(--display);
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1;
+    }
+    .score-lbl {
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      text-align: center;
+      margin-top: 3px;
+    }
+    .score-divider {
+      width: 1px;
+      background: var(--rule);
+      align-self: stretch;
+      margin: 4px 0;
+    }
+    .verdict-badge {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      padding: 4px 12px;
+      border-radius: 2px;
+      align-self: center;
+      margin-left: auto;
+    }
+    .verdict-pass { background: #d4edda; color: #2d6a3f; }
+    .verdict-revise { background: #fff3cd; color: #856404; }
+
+    /* download button */
+    .download-row {
+      margin-top: 24px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .download-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      font-weight: 500;
+      text-transform: uppercase;
+      text-decoration: none;
+      background: var(--ink);
+      color: white;
+      border-radius: 3px;
+      padding: 12px 22px;
+      transition: background 0.15s;
+    }
+    .download-btn:hover { background: #3a3530; }
+    .download-btn svg { width: 14px; height: 14px; fill: white; flex-shrink: 0; }
+    .download-note {
+      font-size: 12px;
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    /* ── Responsive ────────────────────────────────────────────── */
+    @media (max-width: 600px) {
+      header { padding: 20px 18px 16px; }
+      main { padding: 28px 16px 60px; }
+      .prompt-row { flex-direction: column; }
+      button#submit-btn { width: 100%; }
+      .scores-strip { gap: 6px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <span class="masthead-label">Automated Research Division</span>
+  <h1 class="masthead-title">Ig Nobel Research Agent</h1>
+  <p class="masthead-sub">First make people laugh, then make them think.</p>
+</header>
+
+<main>
+
+  <!-- ── Input ── -->
+  <section class="prompt-section">
+    <label class="prompt-label" for="prompt-input">Research Request</label>
+    <div class="prompt-row">
+      <textarea
+        id="prompt-input"
+        rows="3"
+        placeholder="e.g. Give me a new idea for Physics Ig Nobel. Or: something about food and embarrassment."
+      ></textarea>
+      <button id="submit-btn" onclick="submitPrompt()">Generate</button>
+    </div>
+    <div class="examples">
+      <span class="example-chip" onclick="setPrompt(this)">New Physics idea</span>
+      <span class="example-chip" onclick="setPrompt(this)">Biology — something about sleep</span>
+      <span class="example-chip" onclick="setPrompt(this)">Economics study, absurd but real</span>
+      <span class="example-chip" onclick="setPrompt(this)">Medicine, involving everyday objects</span>
+      <span class="example-chip" onclick="setPrompt(this)">Psychology of queuing</span>
+      <span class="example-chip" onclick="setPrompt(this)">Surprise me</span>
+    </div>
+  </section>
+
+  <!-- ── Status ── -->
+  <div id="status-area">
+    <div class="status-row">
+      <div class="spinner"></div>
+      <span id="status-text">Initialising research pipeline…</span>
+    </div>
+  </div>
+
+  <!-- ── Error ── -->
+  <div id="error-area"></div>
+
+  <!-- ── Results ── -->
+  <div id="results-area">
+
+    <!-- Candidate ideas -->
+    <div class="ideas-section">
+      <div class="section-eyebrow">3 candidate ideas generated</div>
+      <div id="ideas-container"></div>
+    </div>
+
+    <hr class="rule" />
+
+    <!-- Selected paper -->
+    <div class="paper-section">
+      <div class="section-eyebrow">Selected & written up</div>
+
+      <div id="paper-title-display" class="paper-title-display"></div>
+      <div id="paper-authors" class="paper-authors"></div>
+
+      <div class="paper-section-heading">Abstract</div>
+      <div id="paper-abstract" class="abstract-box"></div>
+
+      <div class="paper-section-heading">Introduction</div>
+      <div id="paper-intro" class="paper-body"></div>
+
+      <div class="paper-section-heading">Methods</div>
+      <div id="paper-methods" class="paper-body"></div>
+
+      <div class="paper-section-heading">Results</div>
+      <div id="paper-results" class="paper-body"></div>
+
+      <div class="paper-section-heading">Discussion</div>
+      <div id="paper-discussion" class="paper-body"></div>
+
+      <div class="paper-section-heading">References</div>
+      <ol id="paper-references" class="references-list"></ol>
+    </div>
+
+    <!-- Quality scores -->
+    <div class="section-eyebrow">Quality assessment</div>
+    <div class="scores-strip" id="scores-strip"></div>
+
+    <!-- Download -->
+    <div class="download-row">
+      <a id="download-link" class="download-btn" href="#" download>
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 2h14v2H5v-2z"/>
+        </svg>
+        Download PDF
+      </a>
+      <span class="download-note">Full formatted paper — ready to submit*</span>
+    </div>
+
+  </div>
+</main>
+
+<script>
+  const STATUS_MESSAGES = [
+    "Surveying 30 years of absurd science…",
+    "Agent 1 generating candidate ideas…",
+    "Agent 2 judging scientific merit and comedic value…",
+    "Agent 3 drafting the write-up…",
+    "Agent 4 peer-reviewing the paper…",
+    "Formatting references and simulated data…",
+    "Typesetting PDF…",
+    "Almost there — final quality check…",
+  ];
+
+  let statusInterval = null;
+  let statusStep = 0;
+
+  function startStatusRotation() {
+    statusStep = 0;
+    document.getElementById("status-text").textContent = STATUS_MESSAGES[0];
+    statusInterval = setInterval(() => {
+      statusStep = Math.min(statusStep + 1, STATUS_MESSAGES.length - 1);
+      document.getElementById("status-text").textContent = STATUS_MESSAGES[statusStep];
+    }, 6000);
+  }
+
+  function stopStatusRotation() {
+    clearInterval(statusInterval);
+  }
+
+  function setPrompt(chip) {
+    document.getElementById("prompt-input").value = chip.textContent.trim();
+  }
+
+  function show(id) { document.getElementById(id).style.display = "block"; }
+  function hide(id) { document.getElementById(id).style.display = "none"; }
+
+  function escapeHtml(str) {
+    if (!str) return "";
+    return str.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+
+  function renderParagraphs(text) {
+    if (!text) return "";
+    return text.split(/\n\n+/).map(p => `<p>${escapeHtml(p.trim())}</p>`).join("");
+  }
+
+  async function submitPrompt() {
+    const prompt = document.getElementById("prompt-input").value.trim();
+    if (!prompt) return;
+
+    // Reset UI
+    hide("results-area");
+    hide("error-area");
+    document.getElementById("error-area").textContent = "";
+    document.getElementById("submit-btn").disabled = true;
+
+    show("status-area");
+    startStatusRotation();
+
+    try {
+      const response = await fetch("/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || data.error) {
+        throw new Error(data.error || "Unknown error from server.");
+      }
+
+      renderResults(data);
+
+    } catch (err) {
+      document.getElementById("error-area").textContent = "Error: " + err.message;
+      show("error-area");
+    } finally {
+      stopStatusRotation();
+      hide("status-area");
+      document.getElementById("submit-btn").disabled = false;
+    }
+  }
+
+  function renderResults(data) {
+    const paper = data.paper;
+    const judgment = data.judgment;
+
+    // ── Candidate ideas ──
+    const ideasContainer = document.getElementById("ideas-container");
+    ideasContainer.innerHTML = "";
+    const selectedTitle = data.selected_idea?.title || "";
+
+    (data.ideas || []).forEach(idea => {
+      const isSelected = idea.title === selectedTitle;
+      const card = document.createElement("div");
+      card.className = "idea-card" + (isSelected ? " selected" : "");
+      card.innerHTML = `
+        <div class="idea-card-header">
+          <div class="idea-title">${escapeHtml(idea.title)}</div>
+          <span class="idea-badge ${isSelected ? 'winner' : ''}">${isSelected ? '★ Selected' : escapeHtml(idea.ig_nobel_category)}</span>
+        </div>
+        <div class="idea-hypothesis">${escapeHtml(idea.hypothesis)}</div>
+      `;
+      ideasContainer.appendChild(card);
+    });
+
+    // ── Paper body ──
+    document.getElementById("paper-title-display").textContent = paper.title || "";
+    document.getElementById("paper-authors").textContent = (paper.authors || []).join(", ");
+    document.getElementById("paper-abstract").textContent = paper.abstract || "";
+    document.getElementById("paper-intro").innerHTML    = renderParagraphs(paper.introduction);
+    document.getElementById("paper-methods").innerHTML  = renderParagraphs(paper.methods);
+    document.getElementById("paper-results").innerHTML  = renderParagraphs(paper.results);
+    document.getElementById("paper-discussion").innerHTML = renderParagraphs(paper.discussion);
+
+    const refList = document.getElementById("paper-references");
+    refList.innerHTML = "";
+    (paper.references || []).forEach(ref => {
+      const li = document.createElement("li");
+      li.textContent = ref;
+      refList.appendChild(li);
+    });
+
+    // ── Scores ──
+    const strip = document.getElementById("scores-strip");
+    strip.innerHTML = "";
+    if (judgment?.scores) {
+      const s = judgment.scores;
+      const metrics = [
+        { label: "Academic Register", val: s.academic_register },
+        { label: "Consistency",       val: s.internal_consistency },
+        { label: "Ig Nobel Spirit",   val: s.ig_nobel_spirit },
+        { label: "Completeness",      val: s.completeness },
+        { label: "Average",           val: s.average?.toFixed(1) },
+      ];
+      metrics.forEach((m, i) => {
+        if (i > 0) {
+          const div = document.createElement("div");
+          div.className = "score-divider";
+          strip.appendChild(div);
+        }
+        const item = document.createElement("div");
+        item.className = "score-item";
+        item.innerHTML = `<div class="score-num">${m.val ?? "–"}</div><div class="score-lbl">${m.label}</div>`;
+        strip.appendChild(item);
+      });
+
+      const verdict = judgment.verdict || "pass";
+      const badge = document.createElement("div");
+      badge.className = `verdict-badge verdict-${verdict}`;
+      badge.textContent = verdict === "pass" ? "✓ Accepted" : "⚑ Revised";
+      strip.appendChild(badge);
+    }
+
+    // ── Download link ──
+    const link = document.getElementById("download-link");
+    link.href = `/download/${encodeURIComponent(data.pdf_filename)}`;
+    link.download = data.pdf_filename;
+
+    show("results-area");
+    document.getElementById("results-area").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  // Allow Enter (without Shift) to submit
+  document.getElementById("prompt-input").addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      submitPrompt();
+    }
+  });
+</script>
+
+</body>
+</html>
