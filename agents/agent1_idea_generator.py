@@ -50,18 +50,29 @@ The JSON must follow this exact schema:
 Generate exactly 3 ideas. They must be distinct from each other and from the past winners provided."""
 
 
-def run(winners_path: str = "data/past_winners.json") -> dict:
+def run(winners_path: str = "data/past_winners.json", category: str | None = None) -> dict:
     """
     Generates 3 Ig Nobel research ideas inspired by past winners.
+    If category is specified, filters context and output to that category.
     Returns the parsed ideas dict and saves to outputs/ideas.json.
     """
     with open(winners_path, "r") as f:
         winners_data = json.load(f)
 
+    winners = winners_data["winners"]
+    if category:
+        winners = [w for w in winners if w["category"].lower() == category.lower()]
+
     winners_summary = "\n".join([
         f"- {w['year']} ({w['category']}): {w['title']} — {w['summary']}"
-        for w in winners_data["winners"]
+        for w in winners
     ])
+
+    category_instruction = (
+        f"All 3 ideas must be in the '{category}' category."
+        if category else
+        "Ideas may span any Ig Nobel category."
+    )
 
     user_message = f"""Here are past Ig Nobel Prize winners for inspiration and to avoid duplication:
 
@@ -69,6 +80,7 @@ def run(winners_path: str = "data/past_winners.json") -> dict:
 
 Generate 3 original, novel research ideas that could win an Ig Nobel Prize.
 They must be meaningfully different from the examples above.
+{category_instruction}
 Respond with only the JSON object."""
 
     print("[Agent 1] Generating 3 research ideas...")
