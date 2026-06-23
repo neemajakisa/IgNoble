@@ -1,0 +1,76 @@
+{
+  "winners": [
+    {
+      "year": 2023,
+      "category": "Public Health",
+      "title": "Postmortem Masturbation as a Cure for Intractable Hiccups",
+      "summary": "A case report describing how digital rectal massage resolved a patient's intractable hiccups after other treatments failed."
+    },
+    {
+      "year": 2022,
+      "category": "Engineering",
+      "title": "Using a Full Ponytail to Understand the Physics of Hair",
+      "summary": "Mathematical model of a ponytail describing how individual hairs splay outward due to the balance of elasticity, gravity, and randomness."
+    },
+    {
+      "year": 2021,
+      "category": "Kinetics",
+      "title": "Walking Backwards Improves Short-Term Memory",
+      "summary": "Experimental evidence that walking backwards, or even just imagining walking backwards, boosts short-term memory performance."
+    },
+    {
+      "year": 2021,
+      "category": "Ecology",
+      "title": "Cats Act as Both Liquid and Solid",
+      "summary": "Investigation into the ability of cats to conform to the shape of their container, addressing the question of whether cats are liquid."
+    },
+    {
+      "year": 2020,
+      "category": "Acoustics",
+      "title": "The Screaming of Alligators",
+      "summary": "Alligators were shown to bellow in resonance with helium, demonstrating a way to detect the size of the vocal tract."
+    },
+    {
+      "year": 2019,
+      "category": "Medicine",
+      "title": "Swallowing a Shrew Whole to Reconstruct Its Skeleton",
+      "summary": "A scientist swallowed a dead shrew and later recovered its skeleton from their own feces to study digestion-based reconstruction."
+    },
+    {
+      "year": 2018,
+      "category": "Nutrition",
+      "title": "Cannibalism Has Fewer Calories Than Eating Other Meats",
+      "summary": "Researchers calculated the caloric value of human body parts and found that human meat provides fewer calories than most large game animals."
+    },
+    {
+      "year": 2017,
+      "category": "Fluid Dynamics",
+      "title": "Why Do Old Men Have Big Ears?",
+      "summary": "A systematic study tracking ear size in elderly men confirmed that ears continue to grow throughout life, at about 0.22mm per year."
+    },
+    {
+      "year": 2016,
+      "category": "Perception",
+      "title": "Seeing Jesus in Toast",
+      "summary": "People who claim to see faces in random stimuli (pareidolia) also tend to see such faces in other objects more frequently."
+    },
+    {
+      "year": 2015,
+      "category": "Physiology",
+      "title": "Itching on One Side of the Body Is Relieved by Looking in a Mirror",
+      "summary": "The rubber hand illusion was extended to show that watching a mirror-image of your body being scratched relieves an itch on the real limb."
+    },
+    {
+      "year": 2014,
+      "category": "Arctic Science",
+      "title": "Reindeer Are Attracted to Men in Polar Bear Costumes",
+      "summary": "An experiment in which researchers dressed in polar bear costumes and observed the reactions of reindeer in Norway."
+    },
+    {
+      "year": 2013,
+      "category": "Probability",
+      "title": "Birthday Congratulations Extend Lifespan",
+      "summary": "Statistical evidence that people are less likely to die just before their birthday, suggesting psychological will to live to milestones."
+    }
+  ]
+}
