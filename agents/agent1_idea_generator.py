@@ -3,8 +3,8 @@ agents/agent1_idea_generator.py
 
 Agent 1: Idea Generator
 -----------------------
-Takes the corpus of past Ig Nobel winners and generates exactly 3
-novel research ideas eligible for the Ig Nobel prize.
+Takes the corpus of past Ig Nobel winners and generates novel
+research ideas eligible for the Ig Nobel prize.
 
 Input:  data/past_winners.json
 Output: outputs/ideas.json
@@ -64,10 +64,15 @@ def run(winners_path: str = "data/past_winners.json", category: str | None = Non
     if category:
         winners = [w for w in winners if w["category"].lower() == category.lower()]
 
-    winners_summary = "\n".join([
-        f"- {w['year']} ({w['category']}): {w['title']} — {w['summary']}"
-        for w in winners
-    ])
+    def _format_winner(w: dict) -> str:
+        researchers = ", ".join(w["researchers"]) if w["researchers"] else None
+        description = (w["abstract"] or w["summary"] or w["title"])[:300]
+        prefix = f"- {w['year']} ({w['category']})"
+        if researchers:
+            return f"{prefix}: {researchers} — {description}"
+        return f"{prefix}: {description}"
+
+    winners_summary = "\n".join(_format_winner(w) for w in winners)
 
     category_instruction = (
         f"All {num_ideas} ideas must be in the '{category}' category."
