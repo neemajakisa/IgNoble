@@ -47,12 +47,13 @@ The JSON must follow this exact schema:
   ]
 }
 
-Generate exactly 3 ideas. They must be distinct from each other and from the past winners provided."""
+Generate the exact number of ideas requested. They must be distinct from each other and from the past winners provided."""
 
 
-def run(winners_path: str = "data/past_winners.json", category: str | None = None) -> dict:
+def run(winners_path: str = "data/past_winners.json", category: str | None = None,
+        num_ideas: int = 3) -> dict:
     """
-    Generates 3 Ig Nobel research ideas inspired by past winners.
+    Generates Ig Nobel research ideas inspired by past winners.
     If category is specified, filters context and output to that category.
     Returns the parsed ideas dict and saves to outputs/ideas.json.
     """
@@ -69,7 +70,7 @@ def run(winners_path: str = "data/past_winners.json", category: str | None = Non
     ])
 
     category_instruction = (
-        f"All 3 ideas must be in the '{category}' category."
+        f"All {num_ideas} ideas must be in the '{category}' category."
         if category else
         "Ideas may span any Ig Nobel category."
     )
@@ -78,12 +79,12 @@ def run(winners_path: str = "data/past_winners.json", category: str | None = Non
 
 {winners_summary}
 
-Generate 3 original, novel research ideas that could win an Ig Nobel Prize.
+Generate exactly {num_ideas} original, novel research ideas that could win an Ig Nobel Prize.
 They must be meaningfully different from the examples above.
 {category_instruction}
 Respond with only the JSON object."""
 
-    print("[Agent 1] Generating 3 research ideas...")
+    print(f"[Agent 1] Generating {num_ideas} research ideas...")
     raw_response = call_llm(SYSTEM_PROMPT, user_message)
 
     ideas = extract_json(raw_response)

@@ -19,9 +19,9 @@ def extract_json(text: str) -> dict | list:
 
 
 def validate_ideas(data: dict) -> None:
-    """Agent 1 output: must have exactly 3 ideas with required fields."""
+    """Agent 1 output: must have at least 1 idea with required fields."""
     assert "ideas" in data, "Missing 'ideas' key"
-    assert len(data["ideas"]) == 3, f"Expected 3 ideas, got {len(data['ideas'])}"
+    assert len(data["ideas"]) >= 1, "Expected at least 1 idea"
     for i, idea in enumerate(data["ideas"]):
         for field in ["title", "hypothesis", "justification", "ig_nobel_category"]:
             assert field in idea, f"Idea {i+1} missing field '{field}'"

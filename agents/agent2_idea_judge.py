@@ -104,8 +104,9 @@ def run(ideas_path: str = "outputs/ideas.json") -> dict:
         ideas_data = json.load(f)
 
     ideas_text = json.dumps(ideas_data["ideas"], indent=2)
+    num_ideas = len(ideas_data["ideas"])
 
-    user_message = f"""Please evaluate the following 3 research ideas for the Ig Nobel Prize.
+    user_message = f"""Please evaluate the following {num_ideas} research ideas for the Ig Nobel Prize.
 
 IMPORTANT: Before scoring NOVELTY for each idea, use web_search to search for prior research on
 that idea's core concept. Include what you found in the brief_comment for each idea.
@@ -117,7 +118,7 @@ IDEAS:
 
 Respond with only the JSON object."""
 
-    print("[Agent 2] Judging 3 ideas with web search for prior art...")
+    print(f"[Agent 2] Judging {num_ideas} ideas with web search for prior art...")
     raw_response = call_llm_with_search(SYSTEM_PROMPT, user_message)
 
     selection = extract_json(raw_response)
