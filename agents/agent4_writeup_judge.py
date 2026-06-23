@@ -16,35 +16,43 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.llm_client import call_llm
+from utils.llm_client import call_llm_with_search
 from utils.validators import extract_json, validate_judgment
 
-SYSTEM_PROMPT = """You are the senior editor of the Annals of Improbable Research — the journal that 
-administers the Ig Nobel Prizes. You review submissions with extremely high standards.
+SYSTEM_PROMPT = """You are the senior editor of the Annals of Improbable Research — the journal that
+administers the Ig Nobel Prizes. You are known for returning papers for revision. Your standards are high.
 
-A paper passes if it would genuinely embarrass its authors for one year and then make them proud forever.
+A paper passes only if it would genuinely embarrass its authors for one year and then make them proud.
 
-Score the paper on four rubrics, each 1–10:
+Before scoring INTERNAL CONSISTENCY, you MUST use web_search to verify:
+1. That key citations in the references section actually exist — search for the author and title or DOI.
+   A fabricated or hallucinated citation immediately caps INTERNAL CONSISTENCY at 4.
+2. That key statistics and factual claims in the paper are plausible and not invented.
+   Flag any claim that cannot be verified or that contradicts known facts.
 
-1. ACADEMIC REGISTER (1-10): Does it read like a real journal paper? Formal tone, passive voice, 
-   hedged claims, proper citation style? A score of 7+ means it's indistinguishable from real science.
+Score the paper on four rubrics, each 1–10. Be strict — a first draft rarely earns above 7. A score
+of 7 means "genuinely good", not merely "acceptable". Most papers need at least one revision:
 
-2. INTERNAL CONSISTENCY (1-10): Are the numbers consistent across methods/results/discussion?
-   If the abstract says N=50 but methods says N=47, that's a fail. Check all statistics.
+1. ACADEMIC REGISTER (1-10): Does it read like a real journal paper? Formal tone, passive voice,
+   hedged claims, proper citation style? Score 7+ only if it's indistinguishable from real science.
 
-3. IG NOBEL SPIRIT (1-10): Does the paper make you laugh AND make you think? 
-   Does it reveal something genuinely surprising about the world, even if absurd?
+2. INTERNAL CONSISTENCY (1-10): Are numbers consistent across all sections? Do all cited references
+   actually exist (per your web search)? Are statistics plausible? Any fabricated citation or
+   conflicting number caps this score at 4.
 
-4. COMPLETENESS (1-10): Are all sections present and substantive? 
-   Abstract, introduction (with citations), methods, results (with statistics), 
-   discussion (with limitations), and references?
+3. IG NOBEL SPIRIT (1-10): Does the paper make you laugh AND make you think? Does it reveal something
+   genuinely surprising? "Weird" alone is not enough — there must be a real insight.
+
+4. COMPLETENESS (1-10): Are all sections present and substantive?
+   Abstract, introduction (with real citations), methods (reproducible detail), results (with
+   statistics), discussion (with limitations), and references? Thin sections score low.
 
 PASSING THRESHOLD: Average score ≥ 7.0 across all four rubrics.
-
 If any single rubric scores below 5, always return 'revise' regardless of average.
 
-Your feedback for revision must be SPECIFIC and ACTIONABLE — not "improve the introduction" 
-but "the introduction lacks citations before 1990; add 2 foundational studies from the 1970s-80s."
+Your feedback must be SPECIFIC and ACTIONABLE — not "improve the introduction" but
+"the introduction lacks citations before 1990; add 2 foundational studies from the 1970s–80s."
+If you found hallucinated citations, name them explicitly in the internal_consistency feedback.
 
 You must respond with ONLY a valid JSON object.
 
@@ -83,14 +91,19 @@ def run(draft_path: str = "outputs/draft_paper.json",
 
     user_message = f"""Please evaluate the following research paper draft.
 
+IMPORTANT: Before scoring INTERNAL CONSISTENCY, use web_search to verify:
+1. That each citation in the references section actually exists — search for author + title or DOI.
+   If a citation is fabricated, name it explicitly in your internal_consistency feedback.
+2. That key factual claims and statistics in the paper are plausible.
+
+After verifying, score the paper on all four rubrics and return your verdict.
+Respond with only the JSON object.
+
 DRAFT PAPER:
-{draft_text}
+{draft_text}"""
 
-Score it on all four rubrics and return your verdict.
-Respond with only the JSON object."""
-
-    print(f"[Agent 4] Judging draft paper (attempt {attempt})...")
-    raw_response = call_llm(SYSTEM_PROMPT, user_message)
+    print(f"[Agent 4] Judging draft paper with hallucination check (attempt {attempt})...")
+    raw_response = call_llm_with_search(SYSTEM_PROMPT, user_message)
 
     judgment = extract_json(raw_response)
     validate_judgment(judgment)

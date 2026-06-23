@@ -16,20 +16,27 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.llm_client import call_llm
+from utils.llm_client import call_llm_with_search
 from utils.validators import extract_json, validate_selected_idea
 
-SYSTEM_PROMPT = """You are a panel judge for the Ig Nobel Prize committee — a group of genuine Nobel 
-laureates and science journalists who take absurd science very seriously.
+SYSTEM_PROMPT = """You are a highly critical panel judge for the Ig Nobel Prize committee — genuine
+Nobel laureates and science journalists who take absurd science very seriously and are hard to impress.
 
-Your task is to evaluate candidate research ideas and select the one most worthy of an Ig Nobel Prize.
+Before scoring NOVELTY for each idea, you MUST use web_search to search for prior research on that
+idea's core concept. Search for the key phenomenon or hypothesis being studied to verify it has not
+already been published. If similar research exists, the NOVELTY score must reflect that.
 
-Score each idea on four rubrics, each from 1–10:
+Score each idea on four rubrics, each from 1–10. Apply strict standards — scores of 8+ are rare and
+reserved for truly exceptional ideas. Most ideas should score 5–7:
 
-1. NOVELTY (1-10): Has this genuinely never been studied before? Is the angle truly original?
-2. ABSURDITY (1-10): Does it make you laugh out loud? Is the premise wonderfully ridiculous?
-3. SCIENTIFIC PLAUSIBILITY (1-10): Could this realistically be published in a peer-reviewed journal?
-4. IG NOBEL FIT (1-10): Does it embody the spirit of "first laugh, then think"? Would it fit the ceremony?
+1. NOVELTY (1-10): Based on your web search results, has this genuinely never been studied before?
+   If similar work exists in the literature, score accordingly. Truly novel ideas are uncommon.
+2. ABSURDITY (1-10): Does it make you laugh out loud? Merely "quirky" is not enough — it must be
+   wonderfully ridiculous. Be honest; most ideas are not as funny as they seem at first glance.
+3. SCIENTIFIC PLAUSIBILITY (1-10): Could this realistically be conducted and published in a
+   peer-reviewed journal? Vague methods, unverifiable hypotheses, or impractical designs score low.
+4. IG NOBEL FIT (1-10): Does it embody "first laugh, then think"? It must BOTH amuse AND reveal a
+   genuine insight. Ideas that only amuse, or only reveal, do not qualify.
 
 Select the idea with the highest total score. In case of a tie, prefer the one with higher Ig Nobel Fit.
 
@@ -44,7 +51,7 @@ You must respond with ONLY a valid JSON object, no preamble, no markdown prose.
       "scientific_plausibility": 7,
       "ig_nobel_fit": 9,
       "total": 33,
-      "brief_comment": "One sentence on its strengths/weaknesses"
+      "brief_comment": "One sentence on its strengths/weaknesses, including what your novelty search found"
     }
   ],
   "selected_idea": {
@@ -69,15 +76,19 @@ def run(ideas_path: str = "outputs/ideas.json") -> dict:
     ideas_text = json.dumps(ideas_data["ideas"], indent=2)
 
     user_message = f"""Please evaluate the following 3 research ideas for the Ig Nobel Prize.
-Score each on the four rubrics, then select the winner.
+
+IMPORTANT: Before scoring NOVELTY for each idea, use web_search to search for prior research on
+that idea's core concept. Include what you found in the brief_comment for each idea.
+
+After searching, score each idea on all four rubrics, then select the winner.
 
 IDEAS:
 {ideas_text}
 
 Respond with only the JSON object."""
 
-    print("[Agent 2] Judging 3 ideas and selecting the best...")
-    raw_response = call_llm(SYSTEM_PROMPT, user_message)
+    print("[Agent 2] Judging 3 ideas with web search for prior art...")
+    raw_response = call_llm_with_search(SYSTEM_PROMPT, user_message)
 
     selection = extract_json(raw_response)
     validate_selected_idea(selection)
