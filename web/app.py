@@ -17,13 +17,14 @@ import re
 import sys
 import uuid
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from flask import Flask, request, jsonify, send_file, render_template
 
 # Allow imports from project root
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.llm_client import call_llm, call_llm_with_search, PipelineCancelledError
+from utils.llm_client import call_llm, call_llm_with_search, PipelineCancelledError, FAST_MODEL
 from utils.validators import extract_json, validate_ideas, validate_selected_idea, validate_draft_paper, validate_judgment
 from web.pdf_generator import generate_pdf
 
@@ -31,6 +32,49 @@ from agents.agent1_idea_generator import SYSTEM_PROMPT as AGENT1_PROMPT, _format
 from agents.agent2_idea_judge import SYSTEM_PROMPT as AGENT2_PROMPT
 from agents.agent3_writeup_generator import SYSTEM_PROMPT as AGENT3_PROMPT
 from agents.agent4_writeup_judge import SYSTEM_PROMPT as AGENT4_PROMPT
+
+# Parallel Agent 2: one scoring call per idea (web search), then a fast selection call
+AGENT2_SCORE_ONE_PROMPT = """You are an Ig Nobel Prize judge scoring a single research idea.
+
+Before scoring NOVELTY, use web_search to find prior research on this idea's core concept and hypothesis.
+
+Score on four rubrics (each 1–10):
+1. NOVELTY: What did your search find? Score ≤ 4 if similar work exists. Score 7+ only for genuinely uncharted territory.
+2. ABSURDITY: Is it inherently funny as a scientific question without any embellishment?
+3. SCIENTIFIC PLAUSIBILITY: Could it be funded, cleared by an ethics board, and published in a legitimate peer-reviewed journal?
+4. IG NOBEL FIT: Does it make you laugh AND then think? The laugh must arrive before the explanation does.
+
+Automatic disqualifiers (ig_nobel_fit ≤ 4): humor is in the framing not the science; merely taboo or edgy; finding would surprise nobody; absurdity was added not discovered.
+
+Respond with ONLY a valid JSON object:
+{
+  "title": "exact title of the idea",
+  "novelty": 7,
+  "absurdity": 8,
+  "scientific_plausibility": 6,
+  "ig_nobel_fit": 8,
+  "total": 29,
+  "brief_comment": "One sentence on strengths/weaknesses including what your novelty search found."
+}"""
+
+AGENT2_SELECT_PROMPT = """You are the chair of the Ig Nobel Prize judging panel. Individual judges have
+pre-scored each idea (including web searches for prior art). Select the single best candidate.
+
+Choose the idea with the highest total score; in a tie, prefer higher ig_nobel_fit.
+Populate selected_idea using the original idea details provided — do not invent new content.
+
+Respond with ONLY a valid JSON object:
+{
+  "scores": [<the scored ideas array, exactly as given>],
+  "selected_idea": {
+    "title": "...",
+    "hypothesis": "...",
+    "justification": "...",
+    "ig_nobel_category": "...",
+    "proposed_methods": "..."
+  },
+  "selection_rationale": "2-3 sentences explaining why this idea was chosen over the others"
+}"""
 
 app = Flask(__name__)
 
@@ -62,6 +106,9 @@ _cancel_flags: dict[str, threading.Event] = {}
 
 # Current pipeline stage, keyed by session_id
 _pipeline_status: dict[str, str] = {}
+
+# Intermediate results available before the pipeline finishes (set after Agent 2)
+_pipeline_data: dict[str, dict] = {}
 
 
 def _set_status(session_id: str, message: str) -> None:
@@ -120,7 +167,7 @@ They must be meaningfully different from the examples above.
 {category_instruction}{constraint_instruction}
 Respond with only the JSON object."""
 
-    raw = call_llm(AGENT1_PROMPT, user_msg, cancel_event=cancel_event)
+    raw = call_llm(AGENT1_PROMPT, user_msg, cancel_event=cancel_event, model=FAST_MODEL)
     ideas = extract_json(raw)
     validate_ideas(ideas)
     return ideas
@@ -128,23 +175,35 @@ Respond with only the JSON object."""
 
 def run_idea_judge(ideas: dict,
                    cancel_event: threading.Event | None = None) -> dict:
-    """Agent 2 — scores ideas with web search for prior art, selects the best one."""
-    ideas_text = json.dumps(ideas["ideas"], indent=2)
-    num_ideas = len(ideas["ideas"])
+    """Agent 2 — scores each idea in parallel (one web-search call each), then selects."""
+    idea_list = ideas["ideas"]
 
-    user_msg = f"""Please evaluate the following {num_ideas} research ideas for the Ig Nobel Prize.
+    def score_one(idea: dict) -> dict:
+        user_msg = (
+            f"Score this Ig Nobel Prize research idea:\n\n"
+            f"{json.dumps(idea, indent=2)}\n\n"
+            f"Respond with only the JSON object."
+        )
+        raw = call_llm_with_search(AGENT2_SCORE_ONE_PROMPT, user_msg, cancel_event=cancel_event)
+        return extract_json(raw)
 
-IMPORTANT: Before scoring NOVELTY for each idea, use web_search to search for prior research on
-that idea's core concept. Include what you found in the brief_comment for each idea.
+    # Fan out — one scoring thread per idea
+    scores = []
+    with ThreadPoolExecutor(max_workers=len(idea_list)) as executor:
+        futures = {executor.submit(score_one, idea): idea for idea in idea_list}
+        for future in as_completed(futures):
+            exc = future.exception()
+            if exc:
+                raise exc  # propagates PipelineCancelledError and API errors
+            scores.append(future.result())
 
-After searching, score each idea on all four rubrics, then select the winner.
-
-IDEAS:
-{ideas_text}
-
-Respond with only the JSON object."""
-
-    raw = call_llm_with_search(AGENT2_PROMPT, user_msg, cancel_event=cancel_event)
+    # Fan in — cheap selection call (no web search needed)
+    user_msg = (
+        f"Pre-scored ideas:\n{json.dumps(scores, indent=2)}\n\n"
+        f"Original idea details:\n{json.dumps(idea_list, indent=2)}\n\n"
+        f"Select the best idea and respond with only the JSON object."
+    )
+    raw = call_llm(AGENT2_SELECT_PROMPT, user_msg, cancel_event=cancel_event, model=FAST_MODEL)
     selection = extract_json(raw)
     validate_selected_idea(selection)
     return selection
@@ -181,7 +240,7 @@ SELECTION RATIONALE:
 {feedback_section}
 Write the full paper now. Respond with only the JSON object."""
 
-    raw = call_llm(AGENT3_PROMPT, user_msg, cancel_event=cancel_event)
+    raw = call_llm(AGENT3_PROMPT, user_msg, cancel_event=cancel_event, model=FAST_MODEL)
     draft = extract_json(raw)
     validate_draft_paper(draft)
     return draft
@@ -192,10 +251,10 @@ def run_writeup_judge(draft: dict, attempt: int = 1,
     """Agent 4 — scores with web search for hallucination/citation checking."""
     user_msg = f"""Please evaluate the following research paper draft.
 
-IMPORTANT: Before scoring INTERNAL CONSISTENCY, use web_search to verify:
-1. That each citation in the references section actually exists — search for author + title or DOI.
-   If a citation is fabricated, name it explicitly in your internal_consistency feedback.
-2. That key factual claims and statistics in the paper are plausible.
+IMPORTANT: Before scoring INTERNAL CONSISTENCY, use web_search to spot-check up to 3 of the most
+specific citations — those with named authors, years, or DOIs rather than vague "studies show…"
+references. Do NOT search for every citation; target the ones most likely to be fabricated.
+Name any unverifiable citation explicitly in your internal_consistency feedback.
 
 After verifying, score the paper on all four rubrics and return your verdict.
 Respond with only the JSON object.
@@ -243,6 +302,13 @@ def run_pipeline(prompt: str, session_id: str,
     selection = run_idea_judge(ideas, cancel_event=cancel_event)
     winner = selection["selected_idea"]
     log.info("[%s] Selected idea: %s", session_id, winner["title"])
+
+    # Make ideas + selection visible in the UI before Agent 3 starts
+    _pipeline_data[session_id] = {
+        "ideas": ideas["ideas"],
+        "selected_idea": selection["selected_idea"],
+        "selection_rationale": selection.get("selection_rationale", ""),
+    }
 
     # Agent 3 + 4: write-up loop
     revision_feedback = None
@@ -341,11 +407,15 @@ def generate():
     finally:
         _cancel_flags.pop(session_id, None)
         _pipeline_status.pop(session_id, None)
+        _pipeline_data.pop(session_id, None)
 
 
 @app.route("/status/<session_id>")
 def pipeline_status(session_id):
-    return jsonify({"status": _pipeline_status.get(session_id, "")})
+    return jsonify({
+        "status": _pipeline_status.get(session_id, ""),
+        "preview": _pipeline_data.get(session_id),
+    })
 
 
 @app.route("/cancel/<session_id>", methods=["POST"])

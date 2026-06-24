@@ -17,6 +17,7 @@ if not ANTHROPIC_API_KEY:
     raise EnvironmentError("ANTHROPIC_API_KEY not set. Copy .env.example to .env and add your key.")
 
 MODEL = os.environ.get("MODEL", "claude-sonnet-4-6")
+FAST_MODEL = os.environ.get("FAST_MODEL", "claude-haiku-4-5")
 MAX_TOKENS = 4096
 
 client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
@@ -38,20 +39,23 @@ def _wait_for_rate_limit(exc: anthropic.RateLimitError, attempt: int) -> None:
 
 
 def call_llm(system_prompt: str, user_message: str,
-             cancel_event: threading.Event | None = None) -> str:
+             cancel_event: threading.Event | None = None,
+             model: str | None = None) -> str:
     """
     Single entry point for all LLM calls in the pipeline.
     Streams the response and checks cancel_event between chunks, so Stop
     takes effect within a fraction of a second rather than after the full response.
     Retries on rate limit errors with exponential backoff.
+    Pass model=FAST_MODEL to use Haiku for speed-critical steps.
     Raises PipelineCancelledError if cancel_event is set.
     """
+    _model = model or MODEL
     for attempt in range(5):
         _raise_if_cancelled(cancel_event)
         try:
             chunks = []
             with client.messages.stream(
-                model=MODEL,
+                model=_model,
                 max_tokens=MAX_TOKENS,
                 system=system_prompt,
                 messages=[{"role": "user", "content": user_message}],

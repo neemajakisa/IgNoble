@@ -520,16 +520,21 @@
   <!-- ── Error ── -->
   <div id="error-area"></div>
 
-  <!-- ── Results ── -->
-  <div id="results-area">
-
-    <!-- Candidate ideas -->
+  <!-- ── Preview: ideas + selection (shown as soon as Agent 2 finishes) ── -->
+  <div id="preview-area" style="display:none;">
     <div class="ideas-section">
       <div class="section-eyebrow" id="ideas-eyebrow">candidate ideas generated</div>
       <div id="ideas-container"></div>
     </div>
-
+    <div id="selection-rationale-box" style="display:none; margin-top:16px;">
+      <div class="section-eyebrow">Why this idea was selected</div>
+      <div id="rationale-text" class="abstract-box" style="font-size:13px; color:var(--muted); font-style:italic;"></div>
+    </div>
     <hr class="rule" />
+  </div>
+
+  <!-- ── Results: paper + scores + download (shown when pipeline completes) ── -->
+  <div id="results-area">
 
     <!-- Selected paper -->
     <div class="paper-section">
@@ -578,6 +583,7 @@
 <script>
   let statusPollInterval = null;
   let currentSessionId = null;
+  let previewRendered = false;
 
   function generateSessionId() {
     return Math.random().toString(36).substring(2, 10).padEnd(8, '0');
@@ -591,6 +597,9 @@
         const data = await res.json();
         if (data.status) {
           document.getElementById("status-text").textContent = data.status;
+        }
+        if (data.preview && !previewRendered) {
+          renderIdeasPreview(data.preview);
         }
       } catch (_) { /* ignore transient poll errors */ }
     }, 2000);
@@ -636,8 +645,12 @@
     currentSessionId = generateSessionId();
 
     // Reset UI
+    previewRendered = false;
+    hide("preview-area");
     hide("results-area");
     hide("error-area");
+    document.getElementById("ideas-container").innerHTML = "";
+    hide("selection-rationale-box");
     document.getElementById("error-area").textContent = "";
     document.getElementById("submit-btn").disabled = true;
     const stopBtn = document.getElementById("stop-btn");
@@ -685,19 +698,18 @@
     }
   }
 
-  function renderResults(data) {
-    const paper = data.paper;
-    const judgment = data.judgment;
+  function renderIdeasPreview(preview) {
+    previewRendered = true;
 
-    // ── Candidate ideas ──
-    const ideasContainer = document.getElementById("ideas-container");
-    ideasContainer.innerHTML = "";
-    const ideaCount = (data.ideas || []).length;
+    const ideas = preview.ideas || [];
+    const selectedTitle = preview.selected_idea?.title || "";
+    const ideaCount = ideas.length;
     document.getElementById("ideas-eyebrow").textContent =
       `${ideaCount} candidate idea${ideaCount !== 1 ? "s" : ""} generated`;
-    const selectedTitle = data.selected_idea?.title || "";
 
-    (data.ideas || []).forEach(idea => {
+    const ideasContainer = document.getElementById("ideas-container");
+    ideasContainer.innerHTML = "";
+    ideas.forEach(idea => {
       const isSelected = idea.title === selectedTitle;
       const card = document.createElement("div");
       card.className = "idea-card" + (isSelected ? " selected" : "");
@@ -710,6 +722,29 @@
       `;
       ideasContainer.appendChild(card);
     });
+
+    const rationale = preview.selection_rationale;
+    if (rationale) {
+      document.getElementById("rationale-text").textContent = rationale;
+      show("selection-rationale-box");
+    }
+
+    show("preview-area");
+    document.getElementById("preview-area").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function renderResults(data) {
+    // If Agent 2 data wasn't picked up via polling (very fast run), render it now
+    if (!previewRendered) {
+      renderIdeasPreview({
+        ideas: data.ideas,
+        selected_idea: data.selected_idea,
+        selection_rationale: data.selection_rationale,
+      });
+    }
+
+    const paper = data.paper;
+    const judgment = data.judgment;
 
     // ── Paper body ──
     document.getElementById("paper-title-display").textContent = paper.title || "";
@@ -765,7 +800,7 @@
     link.download = data.pdf_filename;
 
     show("results-area");
-    document.getElementById("results-area").scrollIntoView({ behavior: "smooth", block: "start" });
+    document.getElementById("paper-title-display").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   // Allow Enter (without Shift) to submit
