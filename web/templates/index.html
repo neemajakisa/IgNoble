@@ -164,6 +164,32 @@
       transition: border-color 0.15s;
     }
     .param-input:focus { border-color: var(--accent); }
+    .write-paper-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-top: 24px;
+    }
+    .write-paper-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      font-weight: 500;
+      text-transform: uppercase;
+      background: var(--accent2);
+      color: white;
+      border: none;
+      border-radius: 3px;
+      padding: 12px 22px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .write-paper-btn:hover:not(:disabled) { background: #3a6349; }
+    .write-paper-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .write-paper-btn svg { width: 14px; height: 14px; fill: white; flex-shrink: 0; }
 
     /* example prompts */
     .examples {
@@ -529,51 +555,78 @@
     <hr class="rule" />
   </div>
 
-  <!-- ── Results: paper + scores + download (shown when pipeline completes) ── -->
+  <!-- ── Results: plan + write button + paper (shown when pipeline completes) ── -->
   <div id="results-area">
 
-    <!-- Selected paper -->
-    <div class="paper-section">
-      <div class="section-eyebrow">Selected & written up</div>
-
-      <div id="paper-title-display" class="paper-title-display"></div>
-      <div id="paper-authors" class="paper-authors"></div>
-
-      <div class="paper-section-heading">Abstract</div>
-      <div id="paper-abstract" class="abstract-box"></div>
-
-      <div class="paper-section-heading">Introduction</div>
-      <div id="paper-intro" class="paper-body"></div>
-
+    <!-- Approved study plan (always shown) -->
+    <div id="plan-section" class="paper-section">
+      <div class="section-eyebrow">Approved study plan</div>
+      <div id="plan-title" class="paper-title-display"></div>
+      <div class="paper-section-heading">Hypothesis</div>
+      <div id="plan-hypothesis" class="abstract-box"></div>
       <div class="paper-section-heading">Methods</div>
-      <div id="paper-methods" class="paper-body"></div>
+      <div id="plan-methods" class="paper-body"></div>
+      <div class="paper-section-heading">Expected finding</div>
+      <div id="plan-finding" class="abstract-box"></div>
 
-      <div class="paper-section-heading">Results</div>
-      <div id="paper-results" class="paper-body"></div>
-
-      <div class="paper-section-heading">Discussion</div>
-      <div id="paper-discussion" class="paper-body"></div>
-
-      <div class="paper-section-heading">References</div>
-      <ol id="paper-references" class="references-list"></ol>
+      <!-- Plan scores -->
+      <div class="section-eyebrow" style="margin-top:24px;">Plan assessment</div>
+      <div class="scores-strip" id="scores-strip"></div>
     </div>
 
-    <!-- Quality scores -->
-    <div class="section-eyebrow">Quality assessment</div>
-    <div class="scores-strip" id="scores-strip"></div>
-
-    <!-- Download -->
-    <div class="download-row">
-      <button id="download-btn" class="download-btn" onclick="createAndDownloadPdf()">
+    <!-- Write full paper (shown after plan; hidden until then) -->
+    <div id="write-paper-row" class="write-paper-row" style="display:none;">
+      <button id="write-paper-btn" class="write-paper-btn" onclick="writeFullPaper()">
         <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 2h14v2H5v-2z"/>
+          <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75z"/>
         </svg>
-        Create &amp; Download PDF
+        Write Full Paper
       </button>
-      <span class="download-note">Full formatted paper — ready to submit*</span>
+      <span class="download-note">Expands the approved plan into a complete academic paper</span>
     </div>
 
-  </div>
+    <!-- Full paper (hidden until Write Full Paper is clicked) -->
+    <div id="paper-section" style="display:none;">
+      <hr class="rule" />
+
+      <div class="paper-section">
+        <div class="section-eyebrow">Full paper</div>
+
+        <div id="paper-title-display" class="paper-title-display"></div>
+        <div id="paper-authors" class="paper-authors"></div>
+
+        <div class="paper-section-heading">Abstract</div>
+        <div id="paper-abstract" class="abstract-box"></div>
+
+        <div class="paper-section-heading">Introduction</div>
+        <div id="paper-intro" class="paper-body"></div>
+
+        <div class="paper-section-heading">Methods</div>
+        <div id="paper-methods" class="paper-body"></div>
+
+        <div class="paper-section-heading">Results</div>
+        <div id="paper-results" class="paper-body"></div>
+
+        <div class="paper-section-heading">Discussion</div>
+        <div id="paper-discussion" class="paper-body"></div>
+
+        <div class="paper-section-heading">References</div>
+        <ol id="paper-references" class="references-list"></ol>
+      </div>
+
+      <!-- Download -->
+      <div class="download-row">
+        <button id="download-btn" class="download-btn" onclick="createAndDownloadPdf()">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 2h14v2H5v-2z"/>
+          </svg>
+          Create &amp; Download PDF
+        </button>
+        <span class="download-note">Full formatted paper — ready to submit*</span>
+      </div>
+    </div><!-- /#paper-section -->
+
+  </div><!-- /#results-area -->
 </main>
 
 <script>
@@ -581,6 +634,8 @@
   let currentSessionId = null;
   let previewRendered = false;
   let currentPaper = null;
+  let currentPlan = null;
+  let currentSelectedIdea = null;
 
   function generateSessionId() {
     return Math.random().toString(36).substring(2, 10).padEnd(8, '0');
@@ -671,7 +726,13 @@
     // Reset UI
     previewRendered = false;
     currentPaper = null;
+    currentPlan = null;
+    currentSelectedIdea = null;
     hide("preview-area");
+    hide("results-area");
+    hide("write-paper-row");
+    document.getElementById("paper-section").style.display = "none";
+    document.getElementById("scores-strip").innerHTML = "";
     hide("results-area");
     hide("error-area");
     document.getElementById("ideas-container").innerHTML = "";
@@ -758,8 +819,51 @@
     document.getElementById("preview-area").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  async function writeFullPaper() {
+    if (!currentPlan || !currentSelectedIdea) return;
+    const btn = document.getElementById("write-paper-btn");
+    btn.disabled = true;
+    btn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75z"/></svg> Writing…`;
+    hide("error-area");
+    try {
+      const res = await fetch("/write-paper", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan: currentPlan, selected_idea: currentSelectedIdea }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || "Paper writing failed.");
+      renderPaper(data.paper);
+      hide("write-paper-row");
+      document.getElementById("paper-section").scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (err) {
+      document.getElementById("error-area").textContent = "Error: " + err.message;
+      show("error-area");
+      btn.disabled = false;
+      btn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75z"/></svg> Write Full Paper`;
+    }
+  }
+
+  function renderPaper(paper) {
+    currentPaper = paper;
+    document.getElementById("paper-title-display").textContent = paper.title || "";
+    document.getElementById("paper-authors").textContent = (paper.authors || []).join(", ");
+    document.getElementById("paper-abstract").textContent = paper.abstract || "";
+    document.getElementById("paper-intro").innerHTML     = renderParagraphs(paper.introduction);
+    document.getElementById("paper-methods").innerHTML   = renderParagraphs(paper.methods);
+    document.getElementById("paper-results").innerHTML   = renderParagraphs(paper.results);
+    document.getElementById("paper-discussion").innerHTML = renderParagraphs(paper.discussion);
+    const refList = document.getElementById("paper-references");
+    refList.innerHTML = "";
+    (paper.references || []).forEach(ref => {
+      const li = document.createElement("li");
+      li.textContent = ref;
+      refList.appendChild(li);
+    });
+    document.getElementById("paper-section").style.display = "";
+  }
+
   function renderResults(data) {
-    // If Agent 2 data wasn't picked up via polling (very fast run), render it now
     if (!previewRendered) {
       renderIdeasPreview({
         ideas: data.ideas,
@@ -768,61 +872,48 @@
       });
     }
 
-    const paper = data.paper;
+    const plan = data.plan;
     const judgment = data.judgment;
 
-    // ── Paper body ──
-    document.getElementById("paper-title-display").textContent = paper.title || "";
-    document.getElementById("paper-authors").textContent = (paper.authors || []).join(", ");
-    document.getElementById("paper-abstract").textContent = paper.abstract || "";
-    document.getElementById("paper-intro").innerHTML    = renderParagraphs(paper.introduction);
-    document.getElementById("paper-methods").innerHTML  = renderParagraphs(paper.methods);
-    document.getElementById("paper-results").innerHTML  = renderParagraphs(paper.results);
-    document.getElementById("paper-discussion").innerHTML = renderParagraphs(paper.discussion);
+    // ── Approved plan ──
+    if (plan) {
+      currentPlan = plan;
+      document.getElementById("plan-title").textContent = plan.title || "";
+      document.getElementById("plan-hypothesis").textContent = plan.hypothesis || "";
+      document.getElementById("plan-methods").innerHTML = renderParagraphs(plan.methods_plan);
+      document.getElementById("plan-finding").textContent = plan.expected_finding || "";
+    }
+    currentSelectedIdea = data.selected_idea || null;
 
-    const refList = document.getElementById("paper-references");
-    refList.innerHTML = "";
-    (paper.references || []).forEach(ref => {
-      const li = document.createElement("li");
-      li.textContent = ref;
-      refList.appendChild(li);
-    });
-
-    // ── Scores ──
+    // ── Plan scores ──
     const strip = document.getElementById("scores-strip");
     strip.innerHTML = "";
     if (judgment?.scores) {
       const s = judgment.scores;
       const metrics = [
-        { label: "Academic Register", val: s.academic_register },
-        { label: "Consistency",       val: s.internal_consistency },
-        { label: "Ig Nobel Spirit",   val: s.ig_nobel_spirit },
-        { label: "Completeness",      val: s.completeness },
-        { label: "Average",           val: s.average?.toFixed(1) },
+        { label: "Method Soundness", val: s.method_soundness },
+        { label: "Ig Nobel Spirit",  val: s.ig_nobel_spirit },
+        { label: "Feasibility",      val: s.feasibility },
+        { label: "Average",          val: s.average?.toFixed(1) },
       ];
       metrics.forEach((m, i) => {
-        if (i > 0) {
-          const div = document.createElement("div");
-          div.className = "score-divider";
-          strip.appendChild(div);
-        }
+        if (i > 0) strip.appendChild(Object.assign(document.createElement("div"), { className: "score-divider" }));
         const item = document.createElement("div");
         item.className = "score-item";
-        item.innerHTML = `<div class="score-num">${m.val ?? "–"}</div><div class="score-lbl">${m.label}</div>`;
+        item.innerHTML = `<div class="score-num">${m.val ?? "–"}</div><div class="score-lbl">${escapeHtml(m.label)}</div>`;
         strip.appendChild(item);
       });
-
       const verdict = judgment.verdict || "pass";
-      const badge = document.createElement("div");
-      badge.className = `verdict-badge verdict-${verdict}`;
-      badge.textContent = verdict === "pass" ? "✓ Accepted" : "⚑ Revised";
+      const badge = Object.assign(document.createElement("div"), {
+        className: `verdict-badge verdict-${verdict}`,
+        textContent: verdict === "pass" ? "✓ Plan approved" : "⚑ Revised",
+      });
       strip.appendChild(badge);
     }
 
-    currentPaper = paper;
-
     show("results-area");
-    document.getElementById("paper-title-display").scrollIntoView({ behavior: "smooth", block: "start" });
+    show("write-paper-row");
+    document.getElementById("plan-section").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   // Allow Enter (without Shift) to submit

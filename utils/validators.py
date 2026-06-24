@@ -36,6 +36,14 @@ def validate_selected_idea(data: dict) -> None:
         assert field in idea, f"Selected idea missing field '{field}'"
 
 
+def validate_study_plan(data: dict) -> None:
+    """Agent 3 (plan) output: must have hypothesis, dataset, methods, expected finding."""
+    required = ["title", "ig_nobel_category", "hypothesis",
+                "dataset_description", "methods_plan", "expected_finding"]
+    for field in required:
+        assert field in data, f"Study plan missing field '{field}'"
+
+
 def validate_draft_paper(data: dict) -> None:
     """Agent 3 output: must have all required paper sections."""
     required_sections = [

@@ -26,13 +26,66 @@ from flask import Flask, request, jsonify, send_file, render_template
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.llm_client import call_llm, call_llm_with_search, PipelineCancelledError, FAST_MODEL
-from utils.validators import extract_json, validate_ideas, validate_selected_idea, validate_draft_paper, validate_judgment
+from utils.validators import (
+    extract_json, validate_ideas, validate_selected_idea,
+    validate_study_plan, validate_draft_paper, validate_judgment,
+)
 from web.pdf_generator import generate_pdf
 
 from agents.agent1_idea_generator import SYSTEM_PROMPT as AGENT1_PROMPT, _format_winner
 from agents.agent2_idea_judge import SYSTEM_PROMPT as AGENT2_PROMPT
 from agents.agent3_writeup_generator import SYSTEM_PROMPT as AGENT3_PROMPT
 from agents.agent4_writeup_judge import SYSTEM_PROMPT as AGENT4_PROMPT
+
+# Agent 3: study plan (replaces full-paper draft in the revision loop)
+AGENT3_PLAN_PROMPT = """You are a scientific designer specialising in Ig Nobel-caliber research.
+Your job is to design a rigorous, reproducible study plan for the given research idea.
+
+The plan must be specific enough that a graduate student could execute it without asking questions.
+Write in plain, precise scientific language — the humor comes from WHAT is studied, not HOW you describe it.
+
+Respond with ONLY a valid JSON object:
+{
+  "title": "Working title for the study",
+  "ig_nobel_category": "e.g. Physics",
+  "hypothesis": "The precise, falsifiable, one-sentence claim",
+  "dataset_description": "Subjects/materials/stimuli required. Specify sample size, source, inclusion and exclusion criteria.",
+  "methods_plan": "Step-by-step procedure: recruitment, apparatus, trials, measurements, and the named statistical test (e.g. paired t-test, one-way ANOVA). Include specific numbers — N, trials per participant, measurement units.",
+  "expected_finding": "The concrete result expected — direction and approximate magnitude. This is where the Ig Nobel comedy lives."
+}"""
+
+# Agent 4: plan judge (no web search — input is tiny, no citations to check)
+AGENT4_PLAN_JUDGE_PROMPT = """You are the Ig Nobel Prize scientific review board evaluating a proposed
+study plan (not yet a paper). Ensure the plan is rigorous enough to produce real publishable science
+and absurd enough to win.
+
+Score on three rubrics (each 1–10):
+1. METHOD_SOUNDNESS: Is the procedure specific enough to replicate? Sample size, instruments, and
+   statistical test all named? Score ≤ 4 if any is missing or vague.
+2. IG_NOBEL_SPIRIT: Does the expected finding make you laugh AND reveal something real? The laugh must
+   arrive before the explanation.
+3. FEASIBILITY: Could this be run in a real lab, cleared by an ethics board, and published in a
+   legitimate journal?
+
+Passing threshold: average ≥ 7.0 and no rubric below 5.
+Default is 'revise'. Issue 'pass' only when the plan is genuinely executable and absurd.
+Feedback must be specific — not "improve methods" but "name the exact instrument and trial count".
+
+Respond with ONLY a valid JSON object:
+{
+  "scores": {
+    "method_soundness": 7,
+    "ig_nobel_spirit": 8,
+    "feasibility": 7,
+    "average": 7.3
+  },
+  "verdict": "pass",
+  "feedback": {
+    "method_soundness": null,
+    "ig_nobel_spirit": null,
+    "feasibility": null
+  }
+}"""
 
 # Parallel Agent 2: one scoring call per idea (web search), then a fast selection call
 AGENT2_SCORE_ONE_PROMPT = """You are an Ig Nobel Prize judge scoring a single research idea.
@@ -210,70 +263,80 @@ def run_idea_judge(ideas: dict,
     return selection
 
 
-def run_writeup_generator(selection: dict, revision_feedback: dict | None = None,
-                          cancel_event: threading.Event | None = None) -> dict:
-    """Agent 3 — writes the full two-page paper using the same prompt as agents/agent3_writeup_generator.py."""
+def run_plan_generator(selection: dict, revision_feedback: dict | None = None,
+                       cancel_event: threading.Event | None = None) -> dict:
+    """Agent 3 — generates a short study plan (fast, Haiku). Replaces full-paper draft in the loop."""
     idea = selection["selected_idea"]
     rationale = selection.get("selection_rationale", "")
 
     if revision_feedback:
-        feedback_section = f"""
-REVISION INSTRUCTIONS — This is attempt #{revision_feedback.get('attempt', 2)}.
-The previous draft was rejected. You MUST address all of the following feedback:
+        revision_section = f"""
+REVISION INSTRUCTIONS — attempt #{revision_feedback.get('attempt', 2)}.
+The previous plan was rejected. Address ALL of the following feedback before responding:
 
 {json.dumps(revision_feedback.get('feedback', {}), indent=2)}
-
-Previous scores:
-{json.dumps(revision_feedback.get('scores', {}), indent=2)}
-
-Do not simply paraphrase the previous draft. Make substantive improvements based on the feedback above.
 """
     else:
-        feedback_section = ""
+        revision_section = ""
 
-    user_msg = f"""Write a complete Ig Nobel-caliber academic paper for the following research idea.
+    user_msg = f"""Design a rigorous study plan for this Ig Nobel research idea.
 
 SELECTED IDEA:
 {json.dumps(idea, indent=2)}
 
 SELECTION RATIONALE:
 {rationale}
-{feedback_section}
-Write the full paper now. Respond with only the JSON object."""
+{revision_section}
+Respond with only the JSON object."""
 
-    raw = call_llm(AGENT3_PROMPT, user_msg, cancel_event=cancel_event, model=FAST_MODEL)
-    draft = extract_json(raw)
-    validate_draft_paper(draft)
-    return draft
+    raw = call_llm(AGENT3_PLAN_PROMPT, user_msg, cancel_event=cancel_event, model=FAST_MODEL)
+    plan = extract_json(raw)
+    validate_study_plan(plan)
+    return plan
 
 
-def run_writeup_judge(draft: dict, attempt: int = 1,
-                      cancel_event: threading.Event | None = None) -> dict:
-    """Agent 4 — scores with web search for hallucination/citation checking."""
-    user_msg = f"""Please evaluate the following research paper draft.
+def run_plan_judge(plan: dict, attempt: int = 1,
+                   cancel_event: threading.Event | None = None) -> dict:
+    """Agent 4 — reviews the study plan. No web search: tiny input, no citations to check."""
+    user_msg = f"""Review this proposed study plan for scientific rigour and Ig Nobel potential.
+Score it and return your verdict. Respond with only the JSON object.
 
-IMPORTANT: Before scoring INTERNAL CONSISTENCY, use web_search to spot-check up to 3 of the most
-specific citations — those with named authors, years, or DOIs rather than vague "studies show…"
-references. Do NOT search for every citation; target the ones most likely to be fabricated.
-Name any unverifiable citation explicitly in your internal_consistency feedback.
+STUDY PLAN:
+{json.dumps(plan, indent=2)}"""
 
-After verifying, score the paper on all four rubrics and return your verdict.
-Respond with only the JSON object.
-
-DRAFT PAPER:
-{json.dumps(draft, indent=2)}"""
-
-    raw = call_llm_with_search(AGENT4_PROMPT, user_msg, cancel_event=cancel_event)
+    raw = call_llm(AGENT4_PLAN_JUDGE_PROMPT, user_msg, cancel_event=cancel_event)
     judgment = extract_json(raw)
     validate_judgment(judgment)
     judgment["attempt"] = attempt
     return judgment
 
 
+def run_paper_writer(plan: dict, selection: dict,
+                     cancel_event: threading.Event | None = None) -> dict:
+    """Final step — writes the full paper from the approved plan. Single Sonnet call, no loop."""
+    user_msg = f"""Write a complete Ig Nobel-caliber academic paper based on the approved study plan below.
+
+APPROVED STUDY PLAN:
+{json.dumps(plan, indent=2)}
+
+ORIGINAL IDEA CONTEXT:
+{json.dumps(selection["selected_idea"], indent=2)}
+
+The methods in the plan are final — expand them into full prose. Generate realistic (invented but
+plausible) results consistent with the expected finding in the plan.
+Respond with only the JSON object."""
+
+    raw = call_llm(AGENT3_PROMPT, user_msg, cancel_event=cancel_event)
+    draft = extract_json(raw)
+    validate_draft_paper(draft)
+    return draft
+
+
 # ── Full pipeline ─────────────────────────────────────────────────────────────
 
 def run_pipeline(prompt: str, session_id: str,
                  num_ideas: int = 3, max_revision_loops: int = 2,
+                 write_paper: bool = True,
                  cancel_event: threading.Event | None = None) -> dict:
     """
     Runs the full 4-agent pipeline for a given prompt.
@@ -311,42 +374,46 @@ def run_pipeline(prompt: str, session_id: str,
         "selection_rationale": selection.get("selection_rationale", ""),
     }
 
-    # Agent 3 + 4: write-up loop
+    # Agent 3 + 4: fast plan revision loop
     revision_feedback = None
-    final_draft = None
+    final_plan = None
     final_judgment = None
 
     for attempt in range(1, max_revision_loops + 2):
         label = f"attempt {attempt}" if attempt > 1 else "first draft"
-        _set_status(session_id, f"Agent 3 — writing paper ({label})…")
-        draft = run_writeup_generator(selection, revision_feedback, cancel_event=cancel_event)
-        log.info("[%s] Draft written: %s", session_id, draft.get("title", "untitled"))
+        _set_status(session_id, f"Agent 3 — drafting study plan ({label})…")
+        plan = run_plan_generator(selection, revision_feedback, cancel_event=cancel_event)
+        log.info("[%s] Plan drafted: %s", session_id, plan.get("title", "untitled"))
 
-        _set_status(session_id, f"Agent 4 — reviewing paper, checking citations ({label})…")
-        judgment = run_writeup_judge(draft, attempt, cancel_event=cancel_event)
+        _set_status(session_id, f"Agent 4 — reviewing plan ({label})…")
+        judgment = run_plan_judge(plan, attempt, cancel_event=cancel_event)
         scores = judgment.get("scores", {})
         log.info(
-            "[%s] Judgment (attempt %d): verdict=%s  avg=%.1f  "
-            "register=%s  consistency=%s  spirit=%s  completeness=%s",
+            "[%s] Plan judgment (attempt %d): verdict=%s  avg=%.1f  "
+            "soundness=%s  spirit=%s  feasibility=%s",
             session_id, attempt, judgment["verdict"],
             scores.get("average", 0),
-            scores.get("academic_register", "?"),
-            scores.get("internal_consistency", "?"),
+            scores.get("method_soundness", "?"),
             scores.get("ig_nobel_spirit", "?"),
-            scores.get("completeness", "?"),
+            scores.get("feasibility", "?"),
         )
 
         if judgment["verdict"] == "pass" or attempt > max_revision_loops:
-            final_draft = draft
+            final_plan = plan
             final_judgment = judgment
             break
 
         revision_feedback = {
             "attempt": attempt + 1,
             "feedback": judgment.get("feedback", {}),
-            "scores": scores,
         }
 
+    # Optional: write full paper from approved plan (Sonnet, single call)
+    final_draft = None
+    if write_paper:
+        _set_status(session_id, "Writing full paper from approved plan…")
+        final_draft = run_paper_writer(final_plan, selection, cancel_event=cancel_event)
+        log.info("[%s] Paper written: %s", session_id, final_draft.get("title", "untitled"))
     log.info("[%s] Done", session_id)
     return {
         "session_id": session_id,
@@ -355,6 +422,7 @@ def run_pipeline(prompt: str, session_id: str,
         "selected_idea": selection["selected_idea"],
         "selection_rationale": selection.get("selection_rationale", ""),
         "scores": selection.get("scores", []),
+        "plan": final_plan,
         "paper": final_draft,
         "judgment": final_judgment,
     }
@@ -387,13 +455,14 @@ def generate():
 
     num_ideas = max(1, min(10, int(data.get("num_ideas", 3))))
     max_revision_loops = max(0, min(5, int(data.get("max_revision_loops", 2))))
+    write_paper = bool(data.get("write_paper", False))
 
     # Accept a client-generated session_id so the stop button can reference it
     raw_sid = data.get("session_id", "")
     session_id = raw_sid if re.match(r'^[a-z0-9]{6,16}$', raw_sid) else uuid.uuid4().hex[:8]
 
-    log.info("[%s] New request — prompt=%r  num_ideas=%d  max_loops=%d",
-             session_id, prompt[:80], num_ideas, max_revision_loops)
+    log.info("[%s] New request — prompt=%r  num_ideas=%d  max_loops=%d  write_paper=%s",
+             session_id, prompt[:80], num_ideas, max_revision_loops, write_paper)
 
     cancel_event = threading.Event()
     _cancel_flags[session_id] = cancel_event
@@ -401,7 +470,7 @@ def generate():
     try:
         result = run_pipeline(prompt, session_id,
                               num_ideas=num_ideas, max_revision_loops=max_revision_loops,
-                              cancel_event=cancel_event)
+                              write_paper=write_paper, cancel_event=cancel_event)
         return jsonify(result)
     except PipelineCancelledError:
         log.info("[%s] Cancelled by user", session_id)
@@ -430,6 +499,23 @@ def cancel(session_id):
         event.set()
         return jsonify({"status": "cancelled"})
     return jsonify({"status": "not found"}), 404
+
+
+@app.route("/write-paper", methods=["POST"])
+def write_paper_route():
+    data = request.get_json() or {}
+    plan = data.get("plan")
+    selected_idea = data.get("selected_idea")
+    if not plan or not selected_idea:
+        return jsonify({"error": "Missing plan or selected_idea."}), 400
+    try:
+        paper = run_paper_writer(plan, {"selected_idea": selected_idea})
+        return jsonify({"paper": paper})
+    except PipelineCancelledError:
+        return jsonify({"cancelled": True})
+    except Exception as e:
+        log.exception("Paper writer error: %s", e)
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/pdf", methods=["POST"])
