@@ -22,9 +22,14 @@ from flask import Flask, request, jsonify, send_file, render_template
 # Allow imports from project root
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.llm_client import call_llm
+from utils.llm_client import call_llm, call_llm_with_search
 from utils.validators import extract_json, validate_ideas, validate_selected_idea, validate_draft_paper, validate_judgment
 from web.pdf_generator import generate_pdf
+
+from agents.agent1_idea_generator import SYSTEM_PROMPT as AGENT1_PROMPT, _format_winner
+from agents.agent2_idea_judge import SYSTEM_PROMPT as AGENT2_PROMPT
+from agents.agent3_writeup_generator import SYSTEM_PROMPT as AGENT3_PROMPT
+from agents.agent4_writeup_judge import SYSTEM_PROMPT as AGENT4_PROMPT
 
 app = Flask(__name__)
 
@@ -59,153 +64,111 @@ Return ONLY a JSON object with these fields:
 
 def run_idea_generator(category: str | None, extra_constraints: str | None, winners: list,
                        num_ideas: int = 3) -> dict:
-    """Agent 1 — generates num_ideas ideas, biased toward the requested category."""
-
-    winners_summary = "\n".join([
-        f"- {w['year']} ({w['category']}): {w['title']}"
-        + (f"\n  Abstract: {w['abstract'][:200]}" if w.get("abstract") else "")
-        for w in winners
-    ])
-
-    category_instruction = ""
+    """Agent 1 — generates num_ideas ideas using the same prompt as agents/agent1_idea_generator.py."""
     if category:
-        category_instruction = f"\nIMPORTANT: ALL {num_ideas} ideas MUST be in the '{category}' category. Do not generate ideas for other categories.\n"
+        winners = [w for w in winners if w["category"].lower() == category.lower()]
 
-    constraint_instruction = ""
-    if extra_constraints:
-        constraint_instruction = f"\nAdditional user constraints: {extra_constraints}\n"
+    winners_summary = "\n".join(_format_winner(w) for w in winners)
 
-    system = f"""You are a creative scientist specializing in absurd-but-legitimate research — the hallmark of Ig Nobel Prize-winning work.
+    category_instruction = (
+        f"All {num_ideas} ideas must be in the '{category}' category."
+        if category else
+        "Ideas may span any Ig Nobel category."
+    )
+    constraint_instruction = (
+        f"\nAdditional user constraints: {extra_constraints}" if extra_constraints else ""
+    )
 
-The Ig Nobel Prizes honor achievements that "first make people LAUGH, then make them THINK."
+    user_msg = f"""Here are past Ig Nobel Prize winners for inspiration and to avoid duplication:
 
-Generate exactly {num_ideas} novel research ideas. Each must:
-1. Be scientifically plausible — publishable in a real journal
-2. Be genuinely funny or surprising in its premise
-3. Be distinct from past winners listed below
-4. Fit a recognizable Ig Nobel category
+{winners_summary}
+
+Generate exactly {num_ideas} original, novel research ideas that could win an Ig Nobel Prize.
+They must be meaningfully different from the examples above.
 {category_instruction}{constraint_instruction}
-Respond with ONLY valid JSON:
-{{
-  "ideas": [
-    {{
-      "title": "Short catchy paper title",
-      "hypothesis": "One sentence stating what the study tests",
-      "justification": "2-3 sentences: why it's funny AND what genuine insight it reveals",
-      "ig_nobel_category": "Category name",
-      "proposed_methods": "1-2 sentences on how it could be conducted"
-    }}
-  ]
-}}"""
+Respond with only the JSON object."""
 
-    user_msg = f"Past winners (avoid duplicating these):\n{winners_summary}\n\nGenerate {num_ideas} original ideas now."
-    raw = call_llm(system, user_msg)
+    raw = call_llm(AGENT1_PROMPT, user_msg)
     ideas = extract_json(raw)
     validate_ideas(ideas)
     return ideas
 
 
 def run_idea_judge(ideas: dict) -> dict:
-    """Agent 2 — scores ideas and selects the best one."""
-    system = """You are a judge for the Ig Nobel Prize committee.
+    """Agent 2 — scores ideas with web search for prior art, selects the best one."""
+    ideas_text = json.dumps(ideas["ideas"], indent=2)
+    num_ideas = len(ideas["ideas"])
 
-Score each idea on four rubrics (1-10):
-1. NOVELTY: Genuinely never studied before?
-2. ABSURDITY: Makes you laugh out loud?
-3. SCIENTIFIC PLAUSIBILITY: Could be published in a peer-reviewed journal?
-4. IG NOBEL FIT: Embodies "first laugh, then think"?
+    user_msg = f"""Please evaluate the following {num_ideas} research ideas for the Ig Nobel Prize.
 
-Select the highest scorer. Ties: prefer higher Ig Nobel Fit.
+IMPORTANT: Before scoring NOVELTY for each idea, use web_search to search for prior research on
+that idea's core concept. Include what you found in the brief_comment for each idea.
 
-Respond with ONLY valid JSON:
-{
-  "scores": [
-    {
-      "title": "exact title",
-      "novelty": 8, "absurdity": 9, "scientific_plausibility": 7, "ig_nobel_fit": 9,
-      "total": 33,
-      "brief_comment": "one sentence"
-    }
-  ],
-  "selected_idea": {
-    "title": "...", "hypothesis": "...", "justification": "...",
-    "ig_nobel_category": "...", "proposed_methods": "..."
-  },
-  "selection_rationale": "2-3 sentences why this was chosen"
-}"""
+After searching, score each idea on all four rubrics, then select the winner.
 
-    raw = call_llm(system, f"Evaluate these ideas:\n{json.dumps(ideas['ideas'], indent=2)}")
+IDEAS:
+{ideas_text}
+
+Respond with only the JSON object."""
+
+    raw = call_llm_with_search(AGENT2_PROMPT, user_msg)
     selection = extract_json(raw)
     validate_selected_idea(selection)
     return selection
 
 
 def run_writeup_generator(selection: dict, revision_feedback: dict | None = None) -> dict:
-    """Agent 3 — writes the full two-page paper."""
-    feedback_section = ""
+    """Agent 3 — writes the full two-page paper using the same prompt as agents/agent3_writeup_generator.py."""
+    idea = selection["selected_idea"]
+    rationale = selection.get("selection_rationale", "")
+
     if revision_feedback:
         feedback_section = f"""
-REVISION INSTRUCTIONS (attempt {revision_feedback.get('attempt', 2)}):
-Address ALL of this feedback:
+REVISION INSTRUCTIONS — This is attempt #{revision_feedback.get('attempt', 2)}.
+The previous draft was rejected. You MUST address all of the following feedback:
+
 {json.dumps(revision_feedback.get('feedback', {}), indent=2)}
+
+Previous scores:
+{json.dumps(revision_feedback.get('scores', {}), indent=2)}
+
+Do not simply paraphrase the previous draft. Make substantive improvements based on the feedback above.
 """
+    else:
+        feedback_section = ""
 
-    system = """You are a scientific writer crafting Ig Nobel-caliber papers.
-Write exactly like a real academic paper — formal tone, passive voice, hedged claims, citations — 
-while investigating something completely absurd. Never break the fourth wall.
+    user_msg = f"""Write a complete Ig Nobel-caliber academic paper for the following research idea.
 
-Simulated results must be internally consistent (same N throughout methods/results/discussion).
+SELECTED IDEA:
+{json.dumps(idea, indent=2)}
 
-Respond with ONLY valid JSON:
-{
-  "title": "Full formal paper title",
-  "authors": ["Dr. A. Researcher", "Prof. B. Scientist"],
-  "abstract": "150-200 word structured abstract",
-  "introduction": "300-400 words with 4-6 invented citations",
-  "methods": "250-350 words with specific participant numbers and procedure",
-  "results": "200-300 words with specific statistics (means, p-values, CIs)",
-  "discussion": "250-300 words with limitations and future directions",
-  "references": ["Author, A. (year). Title. Journal, vol(issue), pages."]
-}
-Include at least 6 references in APA format."""
+SELECTION RATIONALE:
+{rationale}
+{feedback_section}
+Write the full paper now. Respond with only the JSON object."""
 
-    idea = selection["selected_idea"]
-    user_msg = f"Write a complete paper for this idea:\n{json.dumps(idea, indent=2)}\n\nRationale: {selection.get('selection_rationale','')}\n{feedback_section}"
-    raw = call_llm(system, user_msg)
+    raw = call_llm(AGENT3_PROMPT, user_msg)
     draft = extract_json(raw)
     validate_draft_paper(draft)
     return draft
 
 
 def run_writeup_judge(draft: dict, attempt: int = 1) -> dict:
-    """Agent 4 — scores the draft, returns pass or revise with feedback."""
-    system = """You are senior editor of the Annals of Improbable Research.
+    """Agent 4 — scores with web search for hallucination/citation checking."""
+    user_msg = f"""Please evaluate the following research paper draft.
 
-Score on four rubrics (1-10):
-1. ACADEMIC REGISTER: Reads like a real journal paper?
-2. INTERNAL CONSISTENCY: Numbers consistent across all sections?
-3. IG NOBEL SPIRIT: Makes you laugh AND think?
-4. COMPLETENESS: All sections present and substantive?
+IMPORTANT: Before scoring INTERNAL CONSISTENCY, use web_search to verify:
+1. That each citation in the references section actually exists — search for author + title or DOI.
+   If a citation is fabricated, name it explicitly in your internal_consistency feedback.
+2. That key factual claims and statistics in the paper are plausible.
 
-PASS if average >= 7.0 AND no single rubric < 5. Otherwise REVISE.
+After verifying, score the paper on all four rubrics and return your verdict.
+Respond with only the JSON object.
 
-Respond with ONLY valid JSON:
-{
-  "scores": {
-    "academic_register": 8, "internal_consistency": 9,
-    "ig_nobel_spirit": 7, "completeness": 8, "average": 8.0
-  },
-  "verdict": "pass",
-  "overall_comment": "2-3 sentences",
-  "feedback": {
-    "academic_register": "specific feedback or null",
-    "internal_consistency": "specific feedback or null",
-    "ig_nobel_spirit": "specific feedback or null",
-    "completeness": "specific feedback or null"
-  }
-}"""
+DRAFT PAPER:
+{json.dumps(draft, indent=2)}"""
 
-    raw = call_llm(system, f"Evaluate this draft:\n{json.dumps(draft, indent=2)}")
+    raw = call_llm_with_search(AGENT4_PROMPT, user_msg)
     judgment = extract_json(raw)
     validate_judgment(judgment)
     judgment["attempt"] = attempt

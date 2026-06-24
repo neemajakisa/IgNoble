@@ -50,6 +50,15 @@ The JSON must follow this exact schema:
 Generate the exact number of ideas requested. They must be distinct from each other and from the past winners provided."""
 
 
+def _format_winner(w: dict) -> str:
+    researchers = ", ".join(w["researchers"]) if w["researchers"] else None
+    description = (w["abstract"] or w["summary"] or w["title"])[:300]
+    prefix = f"- {w['year']} ({w['category']})"
+    if researchers:
+        return f"{prefix}: {researchers} — {description}"
+    return f"{prefix}: {description}"
+
+
 def run(winners_path: str = "data/past_winners.json", category: str | None = None,
         num_ideas: int = 3) -> dict:
     """
@@ -63,14 +72,6 @@ def run(winners_path: str = "data/past_winners.json", category: str | None = Non
     winners = winners_data["winners"]
     if category:
         winners = [w for w in winners if w["category"].lower() == category.lower()]
-
-    def _format_winner(w: dict) -> str:
-        researchers = ", ".join(w["researchers"]) if w["researchers"] else None
-        description = (w["abstract"] or w["summary"] or w["title"])[:300]
-        prefix = f"- {w['year']} ({w['category']})"
-        if researchers:
-            return f"{prefix}: {researchers} — {description}"
-        return f"{prefix}: {description}"
 
     winners_summary = "\n".join(_format_winner(w) for w in winners)
 
