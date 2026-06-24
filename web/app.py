@@ -57,8 +57,9 @@ Return ONLY a JSON object with these fields:
 
 # ── Agent runners (single-session versions that return data, not write files) ──
 
-def run_idea_generator(category: str | None, extra_constraints: str | None, winners: list) -> dict:
-    """Agent 1 — generates 3 ideas, biased toward the requested category."""
+def run_idea_generator(category: str | None, extra_constraints: str | None, winners: list,
+                       num_ideas: int = 3) -> dict:
+    """Agent 1 — generates num_ideas ideas, biased toward the requested category."""
 
     winners_summary = "\n".join([
         f"- {w['year']} ({w['category']}): {w['title']}"
@@ -68,7 +69,7 @@ def run_idea_generator(category: str | None, extra_constraints: str | None, winn
 
     category_instruction = ""
     if category:
-        category_instruction = f"\nIMPORTANT: ALL 3 ideas MUST be in the '{category}' category. Do not generate ideas for other categories.\n"
+        category_instruction = f"\nIMPORTANT: ALL {num_ideas} ideas MUST be in the '{category}' category. Do not generate ideas for other categories.\n"
 
     constraint_instruction = ""
     if extra_constraints:
@@ -78,7 +79,7 @@ def run_idea_generator(category: str | None, extra_constraints: str | None, winn
 
 The Ig Nobel Prizes honor achievements that "first make people LAUGH, then make them THINK."
 
-Generate exactly 3 novel research ideas. Each must:
+Generate exactly {num_ideas} novel research ideas. Each must:
 1. Be scientifically plausible — publishable in a real journal
 2. Be genuinely funny or surprising in its premise
 3. Be distinct from past winners listed below
@@ -97,7 +98,7 @@ Respond with ONLY valid JSON:
   ]
 }}"""
 
-    user_msg = f"Past winners (avoid duplicating these):\n{winners_summary}\n\nGenerate 3 original ideas now."
+    user_msg = f"Past winners (avoid duplicating these):\n{winners_summary}\n\nGenerate {num_ideas} original ideas now."
     raw = call_llm(system, user_msg)
     ideas = extract_json(raw)
     validate_ideas(ideas)
@@ -213,7 +214,8 @@ Respond with ONLY valid JSON:
 
 # ── Full pipeline ─────────────────────────────────────────────────────────────
 
-def run_pipeline(prompt: str, session_id: str) -> dict:
+def run_pipeline(prompt: str, session_id: str,
+                 num_ideas: int = 3, max_revision_loops: int = 2) -> dict:
     """
     Runs the full 4-agent pipeline for a given prompt.
     Returns a dict with the final paper data and PDF path.
@@ -228,13 +230,13 @@ def run_pipeline(prompt: str, session_id: str) -> dict:
     constraints = intent.get("extra_constraints")
 
     # Agent 1: generate ideas (with category bias)
-    ideas = run_idea_generator(category, constraints, winners)
+    ideas = run_idea_generator(category, constraints, winners, num_ideas=num_ideas)
 
     # Agent 2: judge and select
     selection = run_idea_judge(ideas)
 
-    # Agent 3 + 4: write-up loop (max 2 revisions)
-    MAX_LOOPS = 2
+    # Agent 3 + 4: write-up loop
+    MAX_LOOPS = max_revision_loops
     revision_feedback = None
     final_draft = None
     final_judgment = None
@@ -281,14 +283,18 @@ def index():
 
 @app.route("/generate", methods=["POST"])
 def generate():
-    data = request.get_json()
-    prompt = (data or {}).get("prompt", "").strip()
+    data = request.get_json() or {}
+    prompt = data.get("prompt", "").strip()
     if not prompt:
         return jsonify({"error": "Please enter a research request."}), 400
 
+    num_ideas = max(1, min(10, int(data.get("num_ideas", 3))))
+    max_revision_loops = max(0, min(5, int(data.get("max_revision_loops", 2))))
+
     session_id = uuid.uuid4().hex[:8]
     try:
-        result = run_pipeline(prompt, session_id)
+        result = run_pipeline(prompt, session_id,
+                              num_ideas=num_ideas, max_revision_loops=max_revision_loops)
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500

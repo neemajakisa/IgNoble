@@ -130,6 +130,41 @@
     button#submit-btn:active { transform: scale(0.97); }
     button#submit-btn:disabled { background: var(--muted); cursor: not-allowed; }
 
+    /* pipeline parameters */
+    .params-row {
+      display: flex;
+      gap: 20px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+    .param-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .param-label {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .param-input {
+      font-family: var(--mono);
+      font-size: 13px;
+      width: 52px;
+      padding: 4px 8px;
+      border: 1.5px solid var(--rule);
+      border-radius: 3px;
+      background: white;
+      color: var(--ink);
+      text-align: center;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .param-input:focus { border-color: var(--accent); }
+
     /* example prompts */
     .examples {
       margin-top: 10px;
@@ -435,6 +470,16 @@
       ></textarea>
       <button id="submit-btn" onclick="submitPrompt()">Generate</button>
     </div>
+    <div class="params-row">
+      <div class="param-group">
+        <label class="param-label" for="num-ideas">Ideas to generate</label>
+        <input class="param-input" id="num-ideas" type="number" min="1" max="10" value="3" />
+      </div>
+      <div class="param-group">
+        <label class="param-label" for="max-revision-loops">Revision attempts</label>
+        <input class="param-input" id="max-revision-loops" type="number" min="0" max="5" value="2" />
+      </div>
+    </div>
     <div class="examples">
       <span class="example-chip" onclick="setPrompt(this)">New Physics idea</span>
       <span class="example-chip" onclick="setPrompt(this)">Biology — something about sleep</span>
@@ -461,7 +506,7 @@
 
     <!-- Candidate ideas -->
     <div class="ideas-section">
-      <div class="section-eyebrow">3 candidate ideas generated</div>
+      <div class="section-eyebrow" id="ideas-eyebrow">candidate ideas generated</div>
       <div id="ideas-container"></div>
     </div>
 
@@ -560,6 +605,9 @@
     const prompt = document.getElementById("prompt-input").value.trim();
     if (!prompt) return;
 
+    const numIdeas = Math.max(1, Math.min(10, parseInt(document.getElementById("num-ideas").value, 10) || 3));
+    const maxRevisions = Math.max(0, Math.min(5, parseInt(document.getElementById("max-revision-loops").value, 10) || 2));
+
     // Reset UI
     hide("results-area");
     hide("error-area");
@@ -573,7 +621,7 @@
       const response = await fetch("/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, num_ideas: numIdeas, max_revision_loops: maxRevisions }),
       });
 
       const data = await response.json();
@@ -601,6 +649,9 @@
     // ── Candidate ideas ──
     const ideasContainer = document.getElementById("ideas-container");
     ideasContainer.innerHTML = "";
+    const ideaCount = (data.ideas || []).length;
+    document.getElementById("ideas-eyebrow").textContent =
+      `${ideaCount} candidate idea${ideaCount !== 1 ? "s" : ""} generated`;
     const selectedTitle = data.selected_idea?.title || "";
 
     (data.ideas || []).forEach(idea => {
