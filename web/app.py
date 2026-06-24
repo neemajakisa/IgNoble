@@ -10,6 +10,7 @@ Run from the project root:
 Then open: http://localhost:5001  (or set PORT env var to use a different port)
 """
 
+import io
 import json
 import logging
 import os
@@ -346,13 +347,7 @@ def run_pipeline(prompt: str, session_id: str,
             "scores": scores,
         }
 
-    # Generate PDF
-    _set_status(session_id, "Generating PDF…")
-    pdf_filename = f"ig_nobel_{session_id}.pdf"
-    pdf_path = os.path.join(OUTPUTS_DIR, pdf_filename)
-    generate_pdf(final_draft, pdf_path)
-    log.info("[%s] Done — %s", session_id, pdf_filename)
-
+    log.info("[%s] Done", session_id)
     return {
         "session_id": session_id,
         "intent": intent,
@@ -362,7 +357,6 @@ def run_pipeline(prompt: str, session_id: str,
         "scores": selection.get("scores", []),
         "paper": final_draft,
         "judgment": final_judgment,
-        "pdf_filename": pdf_filename,
     }
 
 
@@ -371,6 +365,17 @@ def run_pipeline(prompt: str, session_id: str,
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/categories")
+def categories():
+    """Returns Ig Nobel categories that appear at least twice in the winners corpus."""
+    from collections import Counter
+    with open(WINNERS_PATH, "r") as f:
+        winners = json.load(f)["winners"]
+    counts = Counter(w["category"] for w in winners)
+    result = [cat for cat, n in counts.most_common() if n >= 2]
+    return jsonify(result)
 
 
 @app.route("/generate", methods=["POST"])
@@ -425,6 +430,30 @@ def cancel(session_id):
         event.set()
         return jsonify({"status": "cancelled"})
     return jsonify({"status": "not found"}), 404
+
+
+@app.route("/pdf", methods=["POST"])
+def create_pdf():
+    data = request.get_json() or {}
+    paper = data.get("paper")
+    if not paper:
+        return jsonify({"error": "No paper data provided."}), 400
+    pdf_path = os.path.join(OUTPUTS_DIR, f"ig_nobel_{uuid.uuid4().hex[:8]}.pdf")
+    try:
+        generate_pdf(paper, pdf_path)
+        with open(pdf_path, "rb") as f:
+            pdf_bytes = f.read()
+    finally:
+        if os.path.exists(pdf_path):
+            os.remove(pdf_path)
+    title_slug = re.sub(r"[^a-z0-9]+", "_", (paper.get("title") or "ig_nobel").lower()).strip("_")
+    filename = f"{title_slug[:60]}.pdf"
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=filename,
+    )
 
 
 @app.route("/download/<filename>")

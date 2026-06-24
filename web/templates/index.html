@@ -445,11 +445,14 @@
       text-decoration: none;
       background: var(--ink);
       color: white;
+      border: none;
       border-radius: 3px;
       padding: 12px 22px;
+      cursor: pointer;
       transition: background 0.15s;
     }
-    .download-btn:hover { background: #3a3530; }
+    .download-btn:hover:not(:disabled) { background: #3a3530; }
+    .download-btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .download-btn svg { width: 14px; height: 14px; fill: white; flex-shrink: 0; }
     .download-note {
       font-size: 12px;
@@ -498,14 +501,7 @@
         <input class="param-input" id="max-revision-loops" type="number" min="0" max="5" value="2" />
       </div>
     </div>
-    <div class="examples">
-      <span class="example-chip" onclick="setPrompt(this)">New Physics idea</span>
-      <span class="example-chip" onclick="setPrompt(this)">Biology — something about sleep</span>
-      <span class="example-chip" onclick="setPrompt(this)">Economics study, absurd but real</span>
-      <span class="example-chip" onclick="setPrompt(this)">Medicine, involving everyday objects</span>
-      <span class="example-chip" onclick="setPrompt(this)">Psychology of queuing</span>
-      <span class="example-chip" onclick="setPrompt(this)">Surprise me</span>
-    </div>
+    <div class="examples" id="category-chips"></div>
   </section>
 
   <!-- ── Status ── -->
@@ -568,12 +564,12 @@
 
     <!-- Download -->
     <div class="download-row">
-      <a id="download-link" class="download-btn" href="#" download>
+      <button id="download-btn" class="download-btn" onclick="createAndDownloadPdf()">
         <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
           <path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 2h14v2H5v-2z"/>
         </svg>
-        Download PDF
-      </a>
+        Create &amp; Download PDF
+      </button>
       <span class="download-note">Full formatted paper — ready to submit*</span>
     </div>
 
@@ -584,6 +580,7 @@
   let statusPollInterval = null;
   let currentSessionId = null;
   let previewRendered = false;
+  let currentPaper = null;
 
   function generateSessionId() {
     return Math.random().toString(36).substring(2, 10).padEnd(8, '0');
@@ -627,6 +624,33 @@
     return text.split(/\n\n+/).map(p => `<p>${escapeHtml(p.trim())}</p>`).join("");
   }
 
+  async function createAndDownloadPdf() {
+    if (!currentPaper) return;
+    const btn = document.getElementById("download-btn");
+    btn.disabled = true;
+    btn.innerHTML = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 2h14v2H5v-2z"/></svg> Generating…`;
+    try {
+      const res = await fetch("/pdf", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({paper: currentPaper}),
+      });
+      if (!res.ok) throw new Error("PDF generation failed.");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = (currentPaper.title || "ig_nobel_paper").slice(0, 60) + ".pdf";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert("Could not generate PDF: " + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 2h14v2H5v-2z"/></svg> Create &amp; Download PDF`;
+    }
+  }
+
   async function stopGeneration() {
     if (!currentSessionId) return;
     const btn = document.getElementById("stop-btn");
@@ -646,6 +670,7 @@
 
     // Reset UI
     previewRendered = false;
+    currentPaper = null;
     hide("preview-area");
     hide("results-area");
     hide("error-area");
@@ -794,10 +819,7 @@
       strip.appendChild(badge);
     }
 
-    // ── Download link ──
-    const link = document.getElementById("download-link");
-    link.href = `/download/${encodeURIComponent(data.pdf_filename)}`;
-    link.download = data.pdf_filename;
+    currentPaper = paper;
 
     show("results-area");
     document.getElementById("paper-title-display").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -810,6 +832,36 @@
       submitPrompt();
     }
   });
+
+  // Load category chips from the winners corpus
+  (async () => {
+    try {
+      const res = await fetch("/categories");
+      const allCats = await res.json();
+      const top10 = allCats.slice(0, 10);
+      const container = document.getElementById("category-chips");
+
+      top10.forEach(cat => {
+        const chip = document.createElement("span");
+        chip.className = "example-chip";
+        chip.textContent = cat;
+        chip.onclick = () => {
+          document.getElementById("prompt-input").value = `Give me a ${cat} Ig Nobel idea`;
+        };
+        container.appendChild(chip);
+      });
+
+      // "Choose at random" picks from the full list
+      const randomChip = document.createElement("span");
+      randomChip.className = "example-chip";
+      randomChip.textContent = "Choose at random";
+      randomChip.onclick = () => {
+        const cat = allCats[Math.floor(Math.random() * allCats.length)];
+        document.getElementById("prompt-input").value = `Give me a ${cat} Ig Nobel idea`;
+      };
+      container.appendChild(randomChip);
+    } catch (_) { /* categories are optional — fail silently */ }
+  })();
 </script>
 
 </body>
