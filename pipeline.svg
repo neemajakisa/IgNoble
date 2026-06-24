@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 730" width="1000" height="730">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 6" refX="9" refY="3"
+            markerWidth="8" markerHeight="6" orient="auto">
+      <polygon points="0,0 10,3 0,6" fill="#333"/>
+    </marker>
+    <marker id="arr-red" viewBox="0 0 10 6" refX="9" refY="3"
+            markerWidth="8" markerHeight="6" orient="auto">
+      <polygon points="0,0 10,3 0,6" fill="#a83b18"/>
+    </marker>
+    <filter id="sh" x="-4%" y="-4%" width="108%" height="108%">
+      <feDropShadow dx="1" dy="2" stdDeviation="3" flood-color="#00000018"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1000" height="730" fill="#f8f5f0"/>
+
+  <!-- ── Title ─────────────────────────────────────────────── -->
+  <text x="500" y="44"
+        text-anchor="middle"
+        font-family="Georgia, 'Times New Roman', serif"
+        font-size="26" font-weight="bold" fill="#1a1714" letter-spacing="0.2">
+    Ig Nobel Research Agent Pipeline
+  </text>
+  <rect x="60" y="56" width="880" height="2" fill="#a83b18"/>
+
+  <!-- ── User Prompt ────────────────────────────────────────── -->
+  <rect x="375" y="68" width="250" height="40" rx="20" fill="#1a1714" filter="url(#sh)"/>
+  <text x="500" y="93"
+        text-anchor="middle"
+        font-family="'Trebuchet MS', Arial, sans-serif"
+        font-size="14" fill="white" font-weight="bold" letter-spacing="0.6">
+    User Prompt
+  </text>
+
+  <!-- Arrow → A1 -->
+  <line x1="500" y1="108" x2="500" y2="146" stroke="#333" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- ── Agent 1: Idea Generator ───────────────────────────── -->
+  <rect x="260" y="148" width="480" height="92" rx="8" fill="white" stroke="#3d6b4f" stroke-width="2.5" filter="url(#sh)"/>
+  <rect x="260" y="148" width="480" height="32" rx="8" fill="#3d6b4f"/>
+  <rect x="260" y="164" width="480" height="16" fill="#3d6b4f"/>
+  <text x="500" y="169"
+        text-anchor="middle"
+        font-family="'Trebuchet MS', Arial, sans-serif"
+        font-size="10" fill="white" letter-spacing="3" font-weight="bold">AGENT  1</text>
+  <!-- number badge -->
+  <circle cx="286" cy="194" r="13" fill="#3d6b4f"/>
+  <text x="286" y="198" text-anchor="middle"
+        font-family="'Trebuchet MS', Arial, sans-serif"
+        font-size="13" fill="white" font-weight="bold">1</text>
+  <text x="510" y="200"
+        text-anchor="middle"
+        font-family="Georgia, serif"
+        font-size="17" font-weight="bold" fill="#1a1714">Idea Generator</text>
+  <text x="510" y="223"
+        text-anchor="middle"
+        font-family="'Trebuchet MS', Arial, sans-serif"
+        font-size="11.5" fill="#666" font-style="italic">
+    Generates N candidate research ideas from past Ig Nobel winners corpus
+  </text>
+
+  <!-- Arrow A1 → A2 -->
+  <line x1="500" y1="240" x2="500" y2="278" stroke="#333" stroke-width="2" marker-end="url(#arr)"/>
+  <rect x="508" y="247" width="68" height="18" rx="4" fill="#ede8df"/>
+  <text x="542" y="260" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="9.5" fill="#7a7168">N  ideas</text>
+
+  <!-- ── Agent 2: Idea Judge ───────────────────────────────── -->
+  <rect x="260" y="280" width="480" height="92" rx="8" fill="white" stroke="#a83b18" stroke-width="2.5" filter="url(#sh)"/>
+  <rect x="260" y="280" width="480" height="32" rx="8" fill="#a83b18"/>
+  <rect x="260" y="296" width="480" height="16" fill="#a83b18"/>
+  <text x="490" y="301"
+        text-anchor="middle"
+        font-family="'Trebuchet MS', Arial, sans-serif"
+        font-size="10" fill="white" letter-spacing="3" font-weight="bold">AGENT  2</text>
+  <!-- web search badge -->
+  <rect x="672" y="287" width="60" height="20" rx="10" fill="#1d4ed8"/>
+  <text x="702" y="301" text-anchor="middle"
+        font-family="'Trebuchet MS', Arial, sans-serif"
+        font-size="9" fill="white" font-weight="bold">web search</text>
+  <!-- number badge -->
+  <circle cx="286" cy="326" r="13" fill="#a83b18"/>
+  <text x="286" y="330" text-anchor="middle"
+        font-family="'Trebuchet MS', Arial, sans-serif"
+        font-size="13" fill="white" font-weight="bold">2</text>
+  <text x="510" y="332"
+        text-anchor="middle"
+        font-family="Georgia, serif"
+        font-size="17" font-weight="bold" fill="#1a1714">Idea Judge</text>
+  <text x="510" y="355"
+        text-anchor="middle"
+        font-family="'Trebuchet MS', Arial, sans-serif"
+        font-size="11.5" fill="#666" font-style="italic">
+    Scores novelty, absurdity and Ig Nobel fit — selects winner
+  </text>
+
+  <!-- Arrow A2 → A3 -->
+  <line x1="500" y1="372" x2="500" y2="410" stroke="#333" stroke-width="2" marker-end="url(#arr)"/>
+  <rect x="508" y="379" width="90" height="18" rx="4" fill="#ede8df"/>
+  <text x="553" y="392" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="9.5" fill="#7a7168">selected  idea</text>
+
+  <!-- ── Agent 3: Write-up Generator ──────────────────────── -->
+  <rect x="260" y="412" width="480" height="92" rx="8" fill="white" stroke="#3d6b4f" stroke-width="2.5" filter="url(#sh)"/>
+  <rect x="260" y="412" width="480" height="32" rx="8" fill="#3d6b4f"/>
+  <rect x="260" y="428" width="480" height="16" fill="#3d6b4f"/>
+  <text x="500" y="433"
+        text-anchor="middle"
+        font-family="'Trebuchet MS', Arial, sans-serif"
+        font-size="10" fill="white" letter-spacing="3" font-weight="bold">AGENT  3</text>
+  <!-- number badge -->
+  <circle cx="286" cy="458" r="13" fill="#3d6b4f"/>
+  <text x="286" y="462" text-anchor="middle"
+        font-family="'Trebuchet MS', Arial, sans-serif"
+        font-size="13" fill="white" font-weight="bold">3</text>
+  <text x="510" y="464"
+        text-anchor="middle"
+        font-family="Georgia, serif"
+        font-size="17" font-weight="bold" fill="#1a1714">Write-up Generator</text>
+  <text x="510" y="487"
+        text-anchor="middle"
+        font-family="'Trebuchet MS', Arial, sans-serif"
+        font-size="11.5" fill="#666" font-style="italic">
+    Drafts full academic paper — abstract, methods, results, discussion
+  </text>
+
+  <!-- Arrow A3 → A4 -->
+  <line x1="500" y1="504" x2="500" y2="542" stroke="#333" stroke-width="2" marker-end="url(#arr)"/>
+  <rect x="508" y="511" width="46" height="18" rx="4" fill="#ede8df"/>
+  <text x="531" y="524" text-anchor="middle"
+        font-family="'Courier New', monospace" font-size="9.5" fill="#7a7168">draft</text>
+
+  <!-- ── Agent 4: Write-up Judge ───────────────────────────── -->
+  <rect x="260" y="544" width="480" height="92" rx="8" fill="white" stroke="#a83b18" stroke-width="2.5" filter="url(#sh)"/>
+  <rect x="260" y="544" width="480" height="32" rx="8" fill="#a83b18"/>
+  <rect x="260" y="560" width="480" height="16" fill="#a83b18"/>
+  <text x="490" y="565"
+        text-anchor="middle"
+        font-family="'Trebuchet MS', Arial, sans-serif"
+        font-size="10" fill="white" letter-spacing="3" font-weight="bold">AGENT  4</text>
+  <!-- web search badge -->
+  <rect x="672" y="551" width="60" height="20" rx="10" fill="#1d4ed8"/>
+  <text x="702" y="565" text-anchor="middle"
+        font-family="'Trebuchet MS', Arial, sans-serif"
+        font-size="9" fill="white" font-weight="bold">web search</text>
+  <!-- number badge -->
+  <circle cx="286" cy="590" r="13" fill="#a83b18"/>
+  <text x="286" y="594" text-anchor="middle"
+        font-family="'Trebuchet MS', Arial, sans-serif"
+        font-size="13" fill="white" font-weight="bold">4</text>
+  <text x="510" y="596"
+        text-anchor="middle"
+        font-family="Georgia, serif"
+        font-size="17" font-weight="bold" fill="#1a1714">Write-up Judge</text>
+  <text x="510" y="619"
+        text-anchor="middle"
+        font-family="'Trebuchet MS', Arial, sans-serif"
+        font-size="11.5" fill="#666" font-style="italic">
+    Scores academic register, consistency and Ig Nobel spirit
+  </text>
+
+  <!-- ── Revision loop ─────────────────────────────────────── -->
+  <path d="M 740,590 L 822,590 L 822,458 L 742,458"
+        fill="none" stroke="#a83b18" stroke-width="2"
+        stroke-dasharray="7,4" marker-end="url(#arr-red)"/>
+  <!-- label box -->
+  <rect x="830" y="506" width="72" height="40" rx="6" fill="#fdf1ee" stroke="#a83b18" stroke-width="1.2"/>
+  <text x="866" y="523" text-anchor="middle"
+        font-family="'Trebuchet MS', Arial, sans-serif"
+        font-size="11.5" fill="#a83b18" font-weight="bold">revise</text>
+  <text x="866" y="539" text-anchor="middle"
+        font-family="'Trebuchet MS', Arial, sans-serif"
+        font-size="10" fill="#a83b18">&#x2264; N  times</text>
+
+  <!-- Arrow A4 → Output -->
+  <line x1="500" y1="636" x2="500" y2="672" stroke="#333" stroke-width="2" marker-end="url(#arr)"/>
+  <rect x="508" y="643" width="40" height="18" rx="4" fill="#d4edda"/>
+  <text x="528" y="656" text-anchor="middle"
+        font-family="'Courier New', monospace"
+        font-size="9.5" fill="#2d6a3f" font-weight="bold">pass</text>
+
+  <!-- ── Output ─────────────────────────────────────────────── -->
+  <rect x="340" y="674" width="320" height="42" rx="7" fill="#1a1714" filter="url(#sh)"/>
+  <text x="500" y="700"
+        text-anchor="middle"
+        font-family="'Trebuchet MS', Arial, sans-serif"
+        font-size="15" fill="white" font-weight="bold" letter-spacing="0.3">
+    Final Paper  +  PDF
+  </text>
+
+  <!-- ── Legend ────────────────────────────────────────────── -->
+  <rect x="60" y="680" width="12" height="12" rx="2" fill="#3d6b4f"/>
+  <text x="78" y="691" font-family="'Trebuchet MS', Arial, sans-serif" font-size="10" fill="#888">Generator</text>
+  <rect x="148" y="680" width="12" height="12" rx="2" fill="#a83b18"/>
+  <text x="166" y="691" font-family="'Trebuchet MS', Arial, sans-serif" font-size="10" fill="#888">Judge</text>
+  <rect x="218" y="680" width="12" height="12" rx="2" fill="#1d4ed8"/>
+  <text x="236" y="691" font-family="'Trebuchet MS', Arial, sans-serif" font-size="10" fill="#888">Web search enabled</text>
+
+  <!-- ── Footnote ───────────────────────────────────────────── -->
+  <text x="940" y="720"
+        text-anchor="end"
+        font-family="'Trebuchet MS', Arial, sans-serif"
+        font-size="9.5" fill="#bbb" font-style="italic">
+    Powered by Claude (Anthropic) &#xb7; claude-sonnet-4-6
+  </text>
+</svg>
