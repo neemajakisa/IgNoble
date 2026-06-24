@@ -34,19 +34,23 @@ def call_llm(system_prompt: str, user_message: str,
              cancel_event: threading.Event | None = None) -> str:
     """
     Single entry point for all LLM calls in the pipeline.
-    Returns the text content of the model's response.
-    Raises PipelineCancelledError before the API call if cancel_event is set.
+    Streams the response and checks cancel_event between chunks, so Stop
+    takes effect within a fraction of a second rather than after the full response.
+    Raises PipelineCancelledError if cancel_event is set.
     """
     _raise_if_cancelled(cancel_event)
-    message = client.messages.create(
+    chunks = []
+    with client.messages.stream(
         model=MODEL,
         max_tokens=MAX_TOKENS,
         system=system_prompt,
-        messages=[
-            {"role": "user", "content": user_message}
-        ]
-    )
-    return message.content[0].text
+        messages=[{"role": "user", "content": user_message}],
+    ) as stream:
+        for text in stream.text_stream:
+            if cancel_event and cancel_event.is_set():
+                raise PipelineCancelledError()
+            chunks.append(text)
+    return "".join(chunks)
 
 
 def call_llm_with_search(system_prompt: str, user_message: str,
