@@ -6,13 +6,11 @@ using reportlab's Platypus layout engine.
 """
 
 from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.lib import colors
-from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, HRFlowable, PageBreak
-)
-from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
+from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
 import re
 
 
@@ -27,8 +25,6 @@ def _clean(text: str) -> str:
 
 
 def build_styles() -> dict:
-    base = getSampleStyleSheet()
-
     styles = {
         "journal_title": ParagraphStyle(
             "journal_title",

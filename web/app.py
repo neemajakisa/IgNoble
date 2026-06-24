@@ -33,9 +33,7 @@ from utils.validators import (
 from web.pdf_generator import generate_pdf
 
 from agents.agent1_idea_generator import SYSTEM_PROMPT as AGENT1_PROMPT, _format_winner
-from agents.agent2_idea_judge import SYSTEM_PROMPT as AGENT2_PROMPT
 from agents.agent3_writeup_generator import SYSTEM_PROMPT as AGENT3_PROMPT
-from agents.agent4_writeup_judge import SYSTEM_PROMPT as AGENT4_PROMPT
 
 # Agent 3: study plan (replaces full-paper draft in the revision loop)
 AGENT3_PLAN_PROMPT = """You are a scientific designer specialising in Ig Nobel-caliber research.
@@ -541,16 +539,6 @@ def create_pdf():
         as_attachment=True,
         download_name=filename,
     )
-
-
-@app.route("/download/<filename>")
-def download(filename):
-    # Safety: only serve files from our outputs dir, no path traversal
-    safe_name = os.path.basename(filename)
-    path = os.path.join(OUTPUTS_DIR, safe_name)
-    if not os.path.exists(path):
-        return jsonify({"error": "File not found"}), 404
-    return send_file(path, as_attachment=True, download_name=safe_name)
 
 
 if __name__ == "__main__":
