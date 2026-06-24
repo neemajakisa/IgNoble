@@ -304,19 +304,7 @@ def download(filename):
     return send_file(path, as_attachment=True, download_name=safe_name)
 
 
-def _find_port(default: int) -> int:
-    """Return default if free, otherwise let the OS pick any free port."""
-    import socket
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        try:
-            s.bind(("", default))
-            return default
-        except OSError:
-            s.bind(("", 0))
-            return s.getsockname()[1]
-
-
 if __name__ == "__main__":
-    port = _find_port(int(os.environ.get("PORT", 5001)))
+    port = int(os.environ.get("PORT", 5001))
     print(f" * Open: http://localhost:{port}")
     app.run(debug=True, port=port, threaded=True)
