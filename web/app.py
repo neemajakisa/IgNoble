@@ -11,6 +11,7 @@ Then open: http://localhost:5001  (or set PORT env var to use a different port)
 """
 
 import json
+import logging
 import os
 import re
 import sys
@@ -35,10 +36,37 @@ app = Flask(__name__)
 
 WINNERS_PATH = "data/past_winners.json"
 OUTPUTS_DIR  = "web/outputs"
+LOGS_DIR     = "web/logs"
 os.makedirs(OUTPUTS_DIR, exist_ok=True)
+os.makedirs(LOGS_DIR, exist_ok=True)
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+
+log = logging.getLogger("ignoble")
+log.setLevel(logging.DEBUG)
+
+_fmt = logging.Formatter("%(asctime)s  %(levelname)-7s  %(message)s",
+                         datefmt="%Y-%m-%d %H:%M:%S")
+
+_file_handler = logging.FileHandler(os.path.join(LOGS_DIR, "pipeline.log"))
+_file_handler.setFormatter(_fmt)
+
+_console_handler = logging.StreamHandler(sys.stdout)
+_console_handler.setFormatter(_fmt)
+
+log.addHandler(_file_handler)
+log.addHandler(_console_handler)
 
 # Cancellation flags keyed by session_id
 _cancel_flags: dict[str, threading.Event] = {}
+
+# Current pipeline stage, keyed by session_id
+_pipeline_status: dict[str, str] = {}
+
+
+def _set_status(session_id: str, message: str) -> None:
+    _pipeline_status[session_id] = message
+    log.info("[%s] %s", session_id, message)
 
 # ── Prompt parser ─────────────────────────────────────────────────────────────
 
@@ -200,16 +228,21 @@ def run_pipeline(prompt: str, session_id: str,
         winners = json.load(f)["winners"]
 
     # Parse user intent
+    _set_status(session_id, "Parsing research request…")
     intent = parse_user_prompt(prompt)
     category = intent.get("category")
     constraints = intent.get("extra_constraints")
 
     # Agent 1: generate ideas (with category bias)
+    _set_status(session_id, f"Agent 1 — generating {num_ideas} candidate idea(s)…")
     ideas = run_idea_generator(category, constraints, winners, num_ideas=num_ideas,
                                cancel_event=cancel_event)
 
     # Agent 2: judge and select
+    _set_status(session_id, "Agent 2 — judging ideas (searching for prior art)…")
     selection = run_idea_judge(ideas, cancel_event=cancel_event)
+    winner = selection["selected_idea"]
+    log.info("[%s] Selected idea: %s", session_id, winner["title"])
 
     # Agent 3 + 4: write-up loop
     revision_feedback = None
@@ -217,8 +250,24 @@ def run_pipeline(prompt: str, session_id: str,
     final_judgment = None
 
     for attempt in range(1, max_revision_loops + 2):
+        label = f"attempt {attempt}" if attempt > 1 else "first draft"
+        _set_status(session_id, f"Agent 3 — writing paper ({label})…")
         draft = run_writeup_generator(selection, revision_feedback, cancel_event=cancel_event)
+        log.info("[%s] Draft written: %s", session_id, draft.get("title", "untitled"))
+
+        _set_status(session_id, f"Agent 4 — reviewing paper, checking citations ({label})…")
         judgment = run_writeup_judge(draft, attempt, cancel_event=cancel_event)
+        scores = judgment.get("scores", {})
+        log.info(
+            "[%s] Judgment (attempt %d): verdict=%s  avg=%.1f  "
+            "register=%s  consistency=%s  spirit=%s  completeness=%s",
+            session_id, attempt, judgment["verdict"],
+            scores.get("average", 0),
+            scores.get("academic_register", "?"),
+            scores.get("internal_consistency", "?"),
+            scores.get("ig_nobel_spirit", "?"),
+            scores.get("completeness", "?"),
+        )
 
         if judgment["verdict"] == "pass" or attempt > max_revision_loops:
             final_draft = draft
@@ -228,13 +277,15 @@ def run_pipeline(prompt: str, session_id: str,
         revision_feedback = {
             "attempt": attempt + 1,
             "feedback": judgment.get("feedback", {}),
-            "scores": judgment.get("scores", {})
+            "scores": scores,
         }
 
     # Generate PDF
+    _set_status(session_id, "Generating PDF…")
     pdf_filename = f"ig_nobel_{session_id}.pdf"
     pdf_path = os.path.join(OUTPUTS_DIR, pdf_filename)
     generate_pdf(final_draft, pdf_path)
+    log.info("[%s] Done — %s", session_id, pdf_filename)
 
     return {
         "session_id": session_id,
@@ -270,19 +321,31 @@ def generate():
     raw_sid = data.get("session_id", "")
     session_id = raw_sid if re.match(r'^[a-z0-9]{6,16}$', raw_sid) else uuid.uuid4().hex[:8]
 
+    log.info("[%s] New request — prompt=%r  num_ideas=%d  max_loops=%d",
+             session_id, prompt[:80], num_ideas, max_revision_loops)
+
     cancel_event = threading.Event()
     _cancel_flags[session_id] = cancel_event
+    _pipeline_status[session_id] = "Starting…"
     try:
         result = run_pipeline(prompt, session_id,
                               num_ideas=num_ideas, max_revision_loops=max_revision_loops,
                               cancel_event=cancel_event)
         return jsonify(result)
     except PipelineCancelledError:
+        log.info("[%s] Cancelled by user", session_id)
         return jsonify({"cancelled": True})
     except Exception as e:
+        log.exception("[%s] Pipeline error: %s", session_id, e)
         return jsonify({"error": str(e)}), 500
     finally:
         _cancel_flags.pop(session_id, None)
+        _pipeline_status.pop(session_id, None)
+
+
+@app.route("/status/<session_id>")
+def pipeline_status(session_id):
+    return jsonify({"status": _pipeline_status.get(session_id, "")})
 
 
 @app.route("/cancel/<session_id>", methods=["POST"])

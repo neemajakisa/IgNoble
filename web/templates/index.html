@@ -576,36 +576,29 @@
 </main>
 
 <script>
-  const STATUS_MESSAGES = [
-    "Surveying 30 years of absurd science…",
-    "Agent 1 generating candidate ideas…",
-    "Agent 2 judging scientific merit and comedic value…",
-    "Agent 3 drafting the write-up…",
-    "Agent 4 peer-reviewing the paper…",
-    "Formatting references and simulated data…",
-    "Typesetting PDF…",
-    "Almost there — final quality check…",
-  ];
-
-  let statusInterval = null;
-  let statusStep = 0;
+  let statusPollInterval = null;
   let currentSessionId = null;
 
   function generateSessionId() {
     return Math.random().toString(36).substring(2, 10).padEnd(8, '0');
   }
 
-  function startStatusRotation() {
-    statusStep = 0;
-    document.getElementById("status-text").textContent = STATUS_MESSAGES[0];
-    statusInterval = setInterval(() => {
-      statusStep = Math.min(statusStep + 1, STATUS_MESSAGES.length - 1);
-      document.getElementById("status-text").textContent = STATUS_MESSAGES[statusStep];
-    }, 6000);
+  function startStatusPolling(sessionId) {
+    document.getElementById("status-text").textContent = "Starting…";
+    statusPollInterval = setInterval(async () => {
+      try {
+        const res = await fetch(`/status/${sessionId}`);
+        const data = await res.json();
+        if (data.status) {
+          document.getElementById("status-text").textContent = data.status;
+        }
+      } catch (_) { /* ignore transient poll errors */ }
+    }, 2000);
   }
 
-  function stopStatusRotation() {
-    clearInterval(statusInterval);
+  function stopStatusPolling() {
+    clearInterval(statusPollInterval);
+    statusPollInterval = null;
   }
 
   function setPrompt(chip) {
@@ -652,7 +645,7 @@
     stopBtn.textContent = "Stop";
 
     show("status-area");
-    startStatusRotation();
+    startStatusPolling(currentSessionId);
 
     try {
       const response = await fetch("/generate", {
@@ -684,7 +677,7 @@
       document.getElementById("error-area").textContent = "Error: " + err.message;
       show("error-area");
     } finally {
-      stopStatusRotation();
+      stopStatusPolling();
       hide("status-area");
       document.getElementById("submit-btn").disabled = false;
       stopBtn.disabled = true;

@@ -5,6 +5,7 @@ All agents import from here — API key and model config live in one place.
 """
 
 import os
+import time
 import threading
 import anthropic
 from dotenv import load_dotenv
@@ -30,27 +31,43 @@ def _raise_if_cancelled(cancel_event: threading.Event | None) -> None:
         raise PipelineCancelledError()
 
 
+def _wait_for_rate_limit(exc: anthropic.RateLimitError, attempt: int) -> None:
+    """Back off exponentially on 429s: 15s, 30s, 60s, 120s."""
+    delay = min(15 * (2 ** attempt), 120)
+    time.sleep(delay)
+
+
 def call_llm(system_prompt: str, user_message: str,
              cancel_event: threading.Event | None = None) -> str:
     """
     Single entry point for all LLM calls in the pipeline.
     Streams the response and checks cancel_event between chunks, so Stop
     takes effect within a fraction of a second rather than after the full response.
+    Retries on rate limit errors with exponential backoff.
     Raises PipelineCancelledError if cancel_event is set.
     """
-    _raise_if_cancelled(cancel_event)
-    chunks = []
-    with client.messages.stream(
-        model=MODEL,
-        max_tokens=MAX_TOKENS,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_message}],
-    ) as stream:
-        for text in stream.text_stream:
-            if cancel_event and cancel_event.is_set():
-                raise PipelineCancelledError()
-            chunks.append(text)
-    return "".join(chunks)
+    for attempt in range(5):
+        _raise_if_cancelled(cancel_event)
+        try:
+            chunks = []
+            with client.messages.stream(
+                model=MODEL,
+                max_tokens=MAX_TOKENS,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_message}],
+            ) as stream:
+                for text in stream.text_stream:
+                    if cancel_event and cancel_event.is_set():
+                        raise PipelineCancelledError()
+                    chunks.append(text)
+            return "".join(chunks)
+        except PipelineCancelledError:
+            raise
+        except anthropic.RateLimitError as e:
+            if attempt == 4:
+                raise
+            _wait_for_rate_limit(e, attempt)
+    raise RuntimeError("call_llm: exhausted retries")
 
 
 def call_llm_with_search(system_prompt: str, user_message: str,
@@ -65,15 +82,25 @@ def call_llm_with_search(system_prompt: str, user_message: str,
     messages = [{"role": "user", "content": user_message}]
     all_text = []
 
-    for _ in range(5):  # max 5 pause_turn continuations
+    rate_limit_attempt = 0
+    pause_turn_count = 0
+    while pause_turn_count < 5:
         _raise_if_cancelled(cancel_event)
-        message = client.messages.create(
-            model=MODEL,
-            max_tokens=8192,
-            system=system_prompt,
-            tools=tools,
-            messages=messages,
-        )
+        try:
+            message = client.messages.create(
+                model=MODEL,
+                max_tokens=8192,
+                system=system_prompt,
+                tools=tools,
+                messages=messages,
+            )
+            rate_limit_attempt = 0  # reset backoff counter on success
+        except anthropic.RateLimitError as e:
+            if rate_limit_attempt >= 4:
+                raise
+            _wait_for_rate_limit(e, rate_limit_attempt)
+            rate_limit_attempt += 1
+            continue
 
         for block in message.content:
             if block.type == "text":
@@ -82,8 +109,8 @@ def call_llm_with_search(system_prompt: str, user_message: str,
         if message.stop_reason == "end_turn":
             break
         elif message.stop_reason == "pause_turn":
-            # Server hit its iteration limit; append assistant turn and continue
             messages.append({"role": "assistant", "content": message.content})
+            pause_turn_count += 1
         else:
             break
 

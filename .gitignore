@@ -5,6 +5,7 @@
 
 outputs/*
 web/outputs/*
+web/logs/*
 
 __pycache__/
 *.pyc
