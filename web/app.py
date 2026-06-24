@@ -291,6 +291,7 @@ Respond with only the JSON object."""
 
     raw = call_llm(AGENT3_PLAN_PROMPT, user_msg, cancel_event=cancel_event, model=FAST_MODEL)
     plan = extract_json(raw)
+    plan["title"] = idea["title"]  # keep title consistent with selected idea
     validate_study_plan(plan)
     return plan
 
