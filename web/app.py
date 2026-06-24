@@ -22,7 +22,7 @@ from flask import Flask, request, jsonify, send_file, render_template
 # Allow imports from project root
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.llm_client import call_llm, call_llm_with_search
+from utils.llm_client import call_llm, call_llm_with_search, PipelineCancelledError
 from utils.validators import extract_json, validate_ideas, validate_selected_idea, validate_draft_paper, validate_judgment
 from web.pdf_generator import generate_pdf
 
@@ -36,6 +36,9 @@ app = Flask(__name__)
 WINNERS_PATH = "data/past_winners.json"
 OUTPUTS_DIR  = "web/outputs"
 os.makedirs(OUTPUTS_DIR, exist_ok=True)
+
+# Cancellation flags keyed by session_id
+_cancel_flags: dict[str, threading.Event] = {}
 
 # ── Prompt parser ─────────────────────────────────────────────────────────────
 
@@ -63,7 +66,8 @@ Return ONLY a JSON object with these fields:
 # ── Agent runners (single-session versions that return data, not write files) ──
 
 def run_idea_generator(category: str | None, extra_constraints: str | None, winners: list,
-                       num_ideas: int = 3) -> dict:
+                       num_ideas: int = 3,
+                       cancel_event: threading.Event | None = None) -> dict:
     """Agent 1 — generates num_ideas ideas using the same prompt as agents/agent1_idea_generator.py."""
     if category:
         winners = [w for w in winners if w["category"].lower() == category.lower()]
@@ -88,13 +92,14 @@ They must be meaningfully different from the examples above.
 {category_instruction}{constraint_instruction}
 Respond with only the JSON object."""
 
-    raw = call_llm(AGENT1_PROMPT, user_msg)
+    raw = call_llm(AGENT1_PROMPT, user_msg, cancel_event=cancel_event)
     ideas = extract_json(raw)
     validate_ideas(ideas)
     return ideas
 
 
-def run_idea_judge(ideas: dict) -> dict:
+def run_idea_judge(ideas: dict,
+                   cancel_event: threading.Event | None = None) -> dict:
     """Agent 2 — scores ideas with web search for prior art, selects the best one."""
     ideas_text = json.dumps(ideas["ideas"], indent=2)
     num_ideas = len(ideas["ideas"])
@@ -111,13 +116,14 @@ IDEAS:
 
 Respond with only the JSON object."""
 
-    raw = call_llm_with_search(AGENT2_PROMPT, user_msg)
+    raw = call_llm_with_search(AGENT2_PROMPT, user_msg, cancel_event=cancel_event)
     selection = extract_json(raw)
     validate_selected_idea(selection)
     return selection
 
 
-def run_writeup_generator(selection: dict, revision_feedback: dict | None = None) -> dict:
+def run_writeup_generator(selection: dict, revision_feedback: dict | None = None,
+                          cancel_event: threading.Event | None = None) -> dict:
     """Agent 3 — writes the full two-page paper using the same prompt as agents/agent3_writeup_generator.py."""
     idea = selection["selected_idea"]
     rationale = selection.get("selection_rationale", "")
@@ -147,13 +153,14 @@ SELECTION RATIONALE:
 {feedback_section}
 Write the full paper now. Respond with only the JSON object."""
 
-    raw = call_llm(AGENT3_PROMPT, user_msg)
+    raw = call_llm(AGENT3_PROMPT, user_msg, cancel_event=cancel_event)
     draft = extract_json(raw)
     validate_draft_paper(draft)
     return draft
 
 
-def run_writeup_judge(draft: dict, attempt: int = 1) -> dict:
+def run_writeup_judge(draft: dict, attempt: int = 1,
+                      cancel_event: threading.Event | None = None) -> dict:
     """Agent 4 — scores with web search for hallucination/citation checking."""
     user_msg = f"""Please evaluate the following research paper draft.
 
@@ -168,7 +175,7 @@ Respond with only the JSON object.
 DRAFT PAPER:
 {json.dumps(draft, indent=2)}"""
 
-    raw = call_llm_with_search(AGENT4_PROMPT, user_msg)
+    raw = call_llm_with_search(AGENT4_PROMPT, user_msg, cancel_event=cancel_event)
     judgment = extract_json(raw)
     validate_judgment(judgment)
     judgment["attempt"] = attempt
@@ -178,11 +185,16 @@ DRAFT PAPER:
 # ── Full pipeline ─────────────────────────────────────────────────────────────
 
 def run_pipeline(prompt: str, session_id: str,
-                 num_ideas: int = 3, max_revision_loops: int = 2) -> dict:
+                 num_ideas: int = 3, max_revision_loops: int = 2,
+                 cancel_event: threading.Event | None = None) -> dict:
     """
     Runs the full 4-agent pipeline for a given prompt.
     Returns a dict with the final paper data and PDF path.
+    Raises PipelineCancelledError if cancel_event is set between stages.
     """
+    if cancel_event is None:
+        cancel_event = threading.Event()
+
     # Load winners corpus
     with open(WINNERS_PATH, "r") as f:
         winners = json.load(f)["winners"]
@@ -193,22 +205,22 @@ def run_pipeline(prompt: str, session_id: str,
     constraints = intent.get("extra_constraints")
 
     # Agent 1: generate ideas (with category bias)
-    ideas = run_idea_generator(category, constraints, winners, num_ideas=num_ideas)
+    ideas = run_idea_generator(category, constraints, winners, num_ideas=num_ideas,
+                               cancel_event=cancel_event)
 
     # Agent 2: judge and select
-    selection = run_idea_judge(ideas)
+    selection = run_idea_judge(ideas, cancel_event=cancel_event)
 
     # Agent 3 + 4: write-up loop
-    MAX_LOOPS = max_revision_loops
     revision_feedback = None
     final_draft = None
     final_judgment = None
 
-    for attempt in range(1, MAX_LOOPS + 2):
-        draft = run_writeup_generator(selection, revision_feedback)
-        judgment = run_writeup_judge(draft, attempt)
+    for attempt in range(1, max_revision_loops + 2):
+        draft = run_writeup_generator(selection, revision_feedback, cancel_event=cancel_event)
+        judgment = run_writeup_judge(draft, attempt, cancel_event=cancel_event)
 
-        if judgment["verdict"] == "pass" or attempt > MAX_LOOPS:
+        if judgment["verdict"] == "pass" or attempt > max_revision_loops:
             final_draft = draft
             final_judgment = judgment
             break
@@ -254,13 +266,32 @@ def generate():
     num_ideas = max(1, min(10, int(data.get("num_ideas", 3))))
     max_revision_loops = max(0, min(5, int(data.get("max_revision_loops", 2))))
 
-    session_id = uuid.uuid4().hex[:8]
+    # Accept a client-generated session_id so the stop button can reference it
+    raw_sid = data.get("session_id", "")
+    session_id = raw_sid if re.match(r'^[a-z0-9]{6,16}$', raw_sid) else uuid.uuid4().hex[:8]
+
+    cancel_event = threading.Event()
+    _cancel_flags[session_id] = cancel_event
     try:
         result = run_pipeline(prompt, session_id,
-                              num_ideas=num_ideas, max_revision_loops=max_revision_loops)
+                              num_ideas=num_ideas, max_revision_loops=max_revision_loops,
+                              cancel_event=cancel_event)
         return jsonify(result)
+    except PipelineCancelledError:
+        return jsonify({"cancelled": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    finally:
+        _cancel_flags.pop(session_id, None)
+
+
+@app.route("/cancel/<session_id>", methods=["POST"])
+def cancel(session_id):
+    event = _cancel_flags.get(session_id)
+    if event:
+        event.set()
+        return jsonify({"status": "cancelled"})
+    return jsonify({"status": "not found"}), 404
 
 
 @app.route("/download/<filename>")
@@ -288,4 +319,4 @@ def _find_port(default: int) -> int:
 if __name__ == "__main__":
     port = _find_port(int(os.environ.get("PORT", 5001)))
     print(f" * Open: http://localhost:{port}")
-    app.run(debug=True, port=port)
+    app.run(debug=True, port=port, threaded=True)

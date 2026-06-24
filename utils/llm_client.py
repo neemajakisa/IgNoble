@@ -5,6 +5,7 @@ All agents import from here — API key and model config live in one place.
 """
 
 import os
+import threading
 import anthropic
 from dotenv import load_dotenv
 
@@ -20,11 +21,23 @@ MAX_TOKENS = 4096
 client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 
-def call_llm(system_prompt: str, user_message: str) -> str:
+class PipelineCancelledError(Exception):
+    pass
+
+
+def _raise_if_cancelled(cancel_event: threading.Event | None) -> None:
+    if cancel_event and cancel_event.is_set():
+        raise PipelineCancelledError()
+
+
+def call_llm(system_prompt: str, user_message: str,
+             cancel_event: threading.Event | None = None) -> str:
     """
     Single entry point for all LLM calls in the pipeline.
     Returns the text content of the model's response.
+    Raises PipelineCancelledError before the API call if cancel_event is set.
     """
+    _raise_if_cancelled(cancel_event)
     message = client.messages.create(
         model=MODEL,
         max_tokens=MAX_TOKENS,
@@ -36,17 +49,20 @@ def call_llm(system_prompt: str, user_message: str) -> str:
     return message.content[0].text
 
 
-def call_llm_with_search(system_prompt: str, user_message: str) -> str:
+def call_llm_with_search(system_prompt: str, user_message: str,
+                         cancel_event: threading.Event | None = None) -> str:
     """
     LLM call with web search enabled for fact-checking and novelty verification.
     Handles the pause_turn continuation loop (server hits 10-iteration limit).
     Returns concatenated text from all response text blocks.
+    Raises PipelineCancelledError before any API call if cancel_event is set.
     """
     tools = [{"type": "web_search_20260209", "name": "web_search"}]
     messages = [{"role": "user", "content": user_message}]
     all_text = []
 
     for _ in range(5):  # max 5 pause_turn continuations
+        _raise_if_cancelled(cancel_event)
         message = client.messages.create(
             model=MODEL,
             max_tokens=8192,

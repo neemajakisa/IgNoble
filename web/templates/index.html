@@ -211,6 +211,24 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    button#stop-btn {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      font-weight: 500;
+      text-transform: uppercase;
+      background: transparent;
+      color: var(--accent);
+      border: 1.5px solid var(--accent);
+      border-radius: 3px;
+      padding: 4px 14px;
+      cursor: pointer;
+      margin-left: auto;
+      transition: background 0.15s, color 0.15s;
+    }
+    button#stop-btn:hover { background: var(--accent); color: white; }
+    button#stop-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
     /* ── Error ─────────────────────────────────────────────────── */
     #error-area {
       display: none;
@@ -495,6 +513,7 @@
     <div class="status-row">
       <div class="spinner"></div>
       <span id="status-text">Initialising research pipeline…</span>
+      <button id="stop-btn" onclick="stopGeneration()">Stop</button>
     </div>
   </div>
 
@@ -570,6 +589,11 @@
 
   let statusInterval = null;
   let statusStep = 0;
+  let currentSessionId = null;
+
+  function generateSessionId() {
+    return Math.random().toString(36).substring(2, 10).padEnd(8, '0');
+  }
 
   function startStatusRotation() {
     statusStep = 0;
@@ -601,6 +625,14 @@
     return text.split(/\n\n+/).map(p => `<p>${escapeHtml(p.trim())}</p>`).join("");
   }
 
+  async function stopGeneration() {
+    if (!currentSessionId) return;
+    const btn = document.getElementById("stop-btn");
+    btn.disabled = true;
+    btn.textContent = "Stopping…";
+    await fetch(`/cancel/${currentSessionId}`, { method: "POST" });
+  }
+
   async function submitPrompt() {
     const prompt = document.getElementById("prompt-input").value.trim();
     if (!prompt) return;
@@ -608,11 +640,16 @@
     const numIdeas = Math.max(1, Math.min(10, parseInt(document.getElementById("num-ideas").value, 10) || 3));
     const maxRevisions = Math.max(0, Math.min(5, parseInt(document.getElementById("max-revision-loops").value, 10) || 2));
 
+    currentSessionId = generateSessionId();
+
     // Reset UI
     hide("results-area");
     hide("error-area");
     document.getElementById("error-area").textContent = "";
     document.getElementById("submit-btn").disabled = true;
+    const stopBtn = document.getElementById("stop-btn");
+    stopBtn.disabled = false;
+    stopBtn.textContent = "Stop";
 
     show("status-area");
     startStatusRotation();
@@ -621,10 +658,21 @@
       const response = await fetch("/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, num_ideas: numIdeas, max_revision_loops: maxRevisions }),
+        body: JSON.stringify({
+          prompt,
+          num_ideas: numIdeas,
+          max_revision_loops: maxRevisions,
+          session_id: currentSessionId,
+        }),
       });
 
       const data = await response.json();
+
+      if (data.cancelled) {
+        document.getElementById("error-area").textContent = "Generation stopped.";
+        show("error-area");
+        return;
+      }
 
       if (!response.ok || data.error) {
         throw new Error(data.error || "Unknown error from server.");
@@ -639,6 +687,8 @@
       stopStatusRotation();
       hide("status-area");
       document.getElementById("submit-btn").disabled = false;
+      stopBtn.disabled = true;
+      currentSessionId = null;
     }
   }
 
